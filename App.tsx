@@ -97,6 +97,7 @@ Final Answer: [Your conclusive response]`,
       isPredefined: false,
       isMeta: false,
       subAgentIds: [],
+      predefinedQuestions: [],
     };
     setAgents(prev => [...prev, newAgent]);
     setSelectedItemId(newAgent.id);
@@ -196,6 +197,38 @@ Final Answer: [Your conclusive response]`,
     setAgents(reorderedAgents);
   }, []);
 
+  const handleMoveAgent = useCallback((agentId: string, direction: 'up' | 'down') => {
+    setAgents(prevAgents => {
+        // Separate predefined from custom agents to ensure we don't mix them
+        const predefinedAgents = prevAgents.filter(a => a.isPredefined);
+        const customAgents = prevAgents.filter(a => !a.isPredefined);
+
+        const currentIndex = customAgents.findIndex(a => a.id === agentId);
+
+        // If agent not found in custom list, do nothing
+        if (currentIndex === -1) {
+            return prevAgents;
+        }
+
+        const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+        // Check if the move is within the bounds of the custom agents array
+        if (newIndex < 0 || newIndex >= customAgents.length) {
+            return prevAgents; // Already at the top or bottom
+        }
+
+        // Swap the elements
+        const newCustomAgents = [...customAgents];
+        const temp = newCustomAgents[currentIndex];
+        newCustomAgents[currentIndex] = newCustomAgents[newIndex];
+        newCustomAgents[newIndex] = temp;
+        
+        // Recombine the lists and return the new state
+        return [...predefinedAgents, ...newCustomAgents];
+    });
+  }, []);
+
+
   const selectedAgent = view === 'agents' ? agents.find(agent => agent.id === selectedItemId) ?? null : null;
   const selectedPipeline = view === 'pipelines' ? pipelines.find(p => p.id === selectedItemId) ?? null : null;
   const selectedItem = selectedAgent ?? selectedPipeline;
@@ -222,6 +255,7 @@ Final Answer: [Your conclusive response]`,
           onCreatePipeline={handleCreatePipeline}
           onDeletePipeline={handleDeletePipeline}
           onReorderAgents={handleReorderAgents}
+          onMoveAgent={handleMoveAgent}
         />
         <main className="flex-1 flex overflow-hidden">
           {selectedItem ? (

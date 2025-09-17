@@ -58,6 +58,11 @@ Final Answer: [Your conclusive, well-supported response]`,
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "What were the main announcements from the last Google I/O?",
+      "Summarize the key points of the latest advancements in AI.",
+      "Who won the last F1 race?",
+    ],
   },
   {
     id: 'agent-creative-writer-2',
@@ -78,6 +83,11 @@ Final Answer: [Your creative piece]`,
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "Write a short story about a robot who discovers music.",
+      "Compose a poem about the city at night.",
+      "Brainstorm three ideas for a fantasy novel.",
+    ],
   },
   {
     id: 'agent-cot-math-3',
@@ -96,6 +106,11 @@ Final Answer: [Your final calculated answer]`,
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "What is 25% of 180?",
+      "Solve for x: 3x - 7 = 14",
+      "Explain the Pythagorean theorem.",
+    ],
   },
   {
     id: 'agent-tech-ops-4',
@@ -127,6 +142,11 @@ Follow this process:
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "What is the current version of React? Use Google Search.",
+      "Fetch the main content from developer.google.com using the WebBrowser tool.",
+      "Use the code interpreter to calculate 1024 * 768.",
+    ],
   },
   {
     id: 'agent-la-liga-5',
@@ -158,6 +178,11 @@ Final Answer: [Your detailed report on the match]`,
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "Who won the last 'El Clásico' and what was the score?",
+      "Summarize the last La Liga matchday.",
+      "Give me the details of the last match for Atlético de Madrid.",
+    ],
   },
   {
     id: 'agent-crypto-6',
@@ -195,6 +220,11 @@ Final Answer: [Your final answer with the price]`,
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "What's the price of Bitcoin?",
+      "How much is 1 Ethereum in Japanese Yen?",
+      "Compare the price of Solana and Cardano in USD.",
+    ],
   },
   {
     id: 'agent-api-call-7',
@@ -225,5 +255,9 @@ Final Answer: [Your parsed, user-friendly answer]`,
     isPredefined: true,
     isMeta: false,
     subAgentIds: [],
+    predefinedQuestions: [
+      "Fetch user data from https://jsonplaceholder.typicode.com/users/1",
+      "Get a random fact from https://uselessfacts.jsph.pl/random.json?language=en",
+    ],
   }
 ];

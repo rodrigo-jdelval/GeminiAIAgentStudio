@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { Agent, Pipeline } from '../types';
-import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag } from './icons/EditorIcons';
+import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag, ArrowUp, ArrowDown } from './icons/EditorIcons';
 
 interface SidebarProps {
   view: 'agents' | 'pipelines';
@@ -16,10 +16,11 @@ interface SidebarProps {
   onCreatePipeline: () => void;
   onDeletePipeline: (id: string) => void;
   onReorderAgents: (agents: Agent[]) => void;
+  onMoveAgent: (agentId: string, direction: 'up' | 'down') => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = (props) => {
-  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents } = props;
+  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents, onMoveAgent } = props;
 
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
@@ -60,6 +61,8 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
       return true;
     });
   }, [agents, activeFilters]);
+
+  const customAgents = useMemo(() => agents.filter(a => !a.isPredefined), [agents]);
 
   // --- Drag and Drop Handlers ---
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, agent: Agent) => {
@@ -136,51 +139,75 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
         <ul>
-          {filteredAgents.map((agent) => (
-            <li key={agent.id}>
-              <div
-                onClick={() => onSelectItem(agent.id)}
-                draggable={!agent.isPredefined}
-                onDragStart={(e) => handleDragStart(e, agent)}
-                onDragOver={handleDragOver}
-                onDragEnter={(e) => handleDragEnter(e, agent)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, agent)}
-                onDragEnd={handleDragEnd}
-                className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-all text-sm group
-                  ${!agent.isPredefined ? 'cursor-grab active:cursor-grabbing' : ''}
-                  ${selectedItemId === agent.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'}
-                  ${draggedAgentId === agent.id ? 'opacity-30' : 'opacity-100'}
-                  ${dropTargetId === agent.id ? 'border-t-2 border-indigo-400' : 'border-t-2 border-transparent'}`
-                }
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <span className="text-xl">{agent.avatar}</span>
-                  <span className="truncate flex-1">{agent.name}</span>
-                  {/* FIX: The 'title' prop is not valid on the Lock icon component. It has been moved to a wrapping span to provide the tooltip and fix the type error. */}
-                  {agent.isPredefined && <span title="Predefined Agent"><Lock className="w-3 h-3 text-gray-400 flex-shrink-0" /></span>}
+          {filteredAgents.map((agent) => {
+            const isCustom = !agent.isPredefined;
+            const customIndex = isCustom ? customAgents.findIndex(a => a.id === agent.id) : -1;
+            
+            return (
+              <li key={agent.id}>
+                <div
+                  onClick={() => onSelectItem(agent.id)}
+                  draggable={!agent.isPredefined}
+                  onDragStart={(e) => handleDragStart(e, agent)}
+                  onDragOver={handleDragOver}
+                  onDragEnter={(e) => handleDragEnter(e, agent)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, agent)}
+                  onDragEnd={handleDragEnd}
+                  className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-all text-sm group
+                    ${!agent.isPredefined ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+                    ${selectedItemId === agent.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'}
+                    ${draggedAgentId === agent.id ? 'opacity-30' : 'opacity-100'}
+                    ${dropTargetId === agent.id ? 'border-t-2 border-indigo-400' : 'border-t-2 border-transparent'}`
+                  }
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <span className="text-xl">{agent.avatar}</span>
+                    <span className="truncate flex-1">{agent.name}</span>
+                    {agent.isPredefined && <span title="Predefined Agent"><Lock className="w-3 h-3 text-gray-400 flex-shrink-0" /></span>}
+                  </div>
+                  <div className="flex items-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isCustom && (
+                        <div className="flex items-center border-r border-gray-700 mr-1 pr-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onMoveAgent(agent.id, 'up'); }}
+                            title="Move Up"
+                            disabled={customIndex === 0}
+                            className="p-1 text-gray-400 hover:text-white hover:bg-indigo-500/50 rounded-md disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onMoveAgent(agent.id, 'down'); }}
+                            title="Move Down"
+                            disabled={customIndex === customAgents.length - 1}
+                            className="p-1 text-gray-400 hover:text-white hover:bg-indigo-500/50 rounded-md disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDuplicateAgent(agent.id); }}
+                        title="Duplicate Agent"
+                        className="p-1 text-gray-400 hover:text-white hover:bg-indigo-500/50 rounded-md"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    {isCustom && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (window.confirm(`Are you sure you want to delete "${agent.name}"?`)) { onDeleteAgent(agent.id); } }}
+                        title="Delete Agent"
+                        className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md ml-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDuplicateAgent(agent.id); }}
-                      title="Duplicate Agent"
-                      className="p-1 text-gray-400 hover:text-white hover:bg-indigo-500/50 rounded-md"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                  {!agent.isPredefined && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (window.confirm(`Are you sure you want to delete "${agent.name}"?`)) { onDeleteAgent(agent.id); } }}
-                      title="Delete Agent"
-                      className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md ml-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
       </nav>
     </>

@@ -28,6 +28,7 @@ export interface Agent {
   isPredefined?: boolean;
   isMeta?: boolean;
   subAgentIds?: string[];
+  predefinedQuestions?: string[];
 }
 
 export interface Message {

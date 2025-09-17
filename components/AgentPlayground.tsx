@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import type { Agent, Message, ReActStep, Pipeline, PipelineMessage, PipelineStep } from '../types';
 import { runAgent, runPipeline } from '../services/geminiService';
@@ -39,23 +38,21 @@ const AgentChatPlayground: React.FC<AgentChatPlaygroundProps> = ({ agent, allAge
   useEffect(scrollToBottom, [messages]);
   useEffect(() => { setMessages([]); }, [agent]);
 
+  const handleSendMessage = async (messageContent: string) => {
+    if (!messageContent.trim() || isLoading) return;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = { id: `msg-${Date.now()}`, role: 'user', content: input };
+    const userMessage: Message = { id: `msg-${Date.now()}`, role: 'user', content: messageContent };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-    
+
     const agentMessage: Message = { id: `msg-${Date.now() + 1}`, role: 'agent', content: '', thinkingSteps: [] };
     setMessages(prev => [...prev, agentMessage]);
 
     try {
-      await runAgent(agent, input, allAgents, (step, isFinal) => {
-        setMessages(prev => prev.map(msg => 
-          msg.id === agentMessage.id 
+      await runAgent(agent, messageContent, allAgents, (step, isFinal) => {
+        setMessages(prev => prev.map(msg =>
+          msg.id === agentMessage.id
           ? {
               ...msg,
               content: isFinal ? step.finalAnswer ?? "Sorry, I couldn't find an answer." : '',
@@ -67,8 +64,8 @@ const AgentChatPlayground: React.FC<AgentChatPlaygroundProps> = ({ agent, allAge
         ));
       });
     } catch (error) {
-       setMessages(prev => prev.map(msg => 
-          msg.id === agentMessage.id 
+       setMessages(prev => prev.map(msg =>
+          msg.id === agentMessage.id
           ? { ...msg, content: `An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}` }
           : msg
         ));
@@ -77,6 +74,16 @@ const AgentChatPlayground: React.FC<AgentChatPlaygroundProps> = ({ agent, allAge
     }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSendMessage(input);
+  };
+
+  const handlePredefinedQuestionClick = (question: string) => {
+    handleSendMessage(question);
+  };
+
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col overflow-hidden">
       <div className="p-4 border-b border-gray-800 flex items-center gap-3">
@@ -84,6 +91,23 @@ const AgentChatPlayground: React.FC<AgentChatPlaygroundProps> = ({ agent, allAge
         <h3 className="text-lg font-semibold">Agent Playground</h3>
       </div>
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+        {messages.length === 0 && agent.predefinedQuestions && agent.predefinedQuestions.length > 0 && (
+          <div className="p-4 bg-gray-800/50 rounded-lg">
+            <h4 className="text-sm font-semibold text-gray-400 mb-3">Example Prompts</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {agent.predefinedQuestions.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => handlePredefinedQuestionClick(q)}
+                  disabled={isLoading}
+                  className="text-left p-3 bg-gray-700/70 hover:bg-gray-700 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {messages.map(message => (
           <div key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>
             {message.role === 'agent' && <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0">{agent.avatar}</div>}
