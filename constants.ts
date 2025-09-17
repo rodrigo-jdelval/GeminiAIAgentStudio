@@ -53,7 +53,11 @@ Final Answer: [Your conclusive, well-supported response]`,
       { ...ALL_TOOLS[2], enabled: false },
       { ...ALL_TOOLS[3], enabled: true },
     ],
+    files: [],
+    tags: ['research', 'web'],
     isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
   },
   {
     id: 'agent-creative-writer-2',
@@ -69,7 +73,11 @@ Final Answer: [Your conclusive, well-supported response]`,
 - Your final response to the user MUST be formatted as:
 Final Answer: [Your creative piece]`,
     tools: ALL_TOOLS.map(t => ({...t, enabled: false})),
+    files: [],
+    tags: ['writing', 'creative'],
     isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
   },
   {
     id: 'agent-cot-math-3',
@@ -83,7 +91,11 @@ Final Answer: [Your creative piece]`,
 - Your final response to the user MUST be formatted as:
 Final Answer: [Your final calculated answer]`,
     tools: ALL_TOOLS.map(t => ({...t, enabled: false})),
+    files: [],
+    tags: ['math', 'education', 'cot'],
     isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
   },
   {
     id: 'agent-tech-ops-4',
@@ -110,7 +122,11 @@ Follow this process:
       { ...ALL_TOOLS[2], enabled: true },
       { ...ALL_TOOLS[3], enabled: true },
     ],
+    files: [],
+    tags: ['technical', 'ops', 'code'],
     isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
   },
   {
     id: 'agent-la-liga-5',
@@ -137,7 +153,11 @@ Final Answer: [Your detailed report on the match]`,
       { ...ALL_TOOLS[2], enabled: false },
       { ...ALL_TOOLS[3], enabled: false },
     ],
+    files: [],
+    tags: ['sports', 'football', 'research'],
     isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
   },
   {
     id: 'agent-crypto-6',
@@ -170,6 +190,40 @@ Final Answer: [Your final answer with the price]`,
       { ...ALL_TOOLS[2], enabled: false },
       { ...ALL_TOOLS[3], enabled: false },
     ],
+    files: [],
+    tags: ['crypto', 'finance', 'api'],
     isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
+  },
+  {
+    id: 'agent-api-call-7',
+    name: 'API Call',
+    description: 'An agent designed to interact with APIs using the HttpRequest tool. It can fetch data from any open API endpoint.',
+    avatar: '📡',
+    systemPrompt: `You are an AI assistant that specializes in fetching data from APIs. Your primary tool is 'HttpRequest'.
+
+Your process is as follows:
+1.  **Analyze**: Understand the user's request to determine the required API endpoint and parameters.
+2.  **Action**: Use the 'HttpRequest' tool with the full URL of the API endpoint. For example: \`HttpRequest("https://api.example.com/data?id=123")\`.
+3.  **Observe**: You will receive the raw response from the API, which is usually in JSON format.
+4.  **Parse & Answer**: Analyze the JSON data in the 'Observation' and extract the specific information the user asked for. Present this information in a clear, user-friendly format.
+
+**IMPORTANT**:
+- You must only use the 'HttpRequest' tool.
+- If the user doesn't provide a full URL, use your knowledge to construct one if possible, or ask for clarification.
+- Your final response to the user MUST be formatted as:
+Final Answer: [Your parsed, user-friendly answer]`,
+    tools: [
+      { ...ALL_TOOLS[0], enabled: false },
+      { ...ALL_TOOLS[1], enabled: true }, // HttpRequest
+      { ...ALL_TOOLS[2], enabled: false },
+      { ...ALL_TOOLS[3], enabled: false },
+    ],
+    files: [],
+    tags: ['api', 'technical'],
+    isPredefined: true,
+    isMeta: false,
+    subAgentIds: [],
   }
 ];

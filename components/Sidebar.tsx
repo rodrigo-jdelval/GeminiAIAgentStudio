@@ -1,60 +1,176 @@
 
-import React from 'react';
-import type { Agent } from '../types';
-import { Plus, Trash2, Lock, Copy } from './icons/EditorIcons';
+import React, { useMemo, useState } from 'react';
+import type { Agent, Pipeline } from '../types';
+import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag } from './icons/EditorIcons';
 
 interface SidebarProps {
+  view: 'agents' | 'pipelines';
+  onSetView: (view: 'agents' | 'pipelines') => void;
   agents: Agent[];
-  selectedAgentId: string | null;
-  onSelectAgent: (id: string) => void;
+  pipelines: Pipeline[];
+  selectedItemId: string | null;
+  onSelectItem: (id: string) => void;
   onCreateAgent: () => void;
   onDeleteAgent: (id: string) => void;
   onDuplicateAgent: (id: string) => void;
+  onCreatePipeline: () => void;
+  onDeletePipeline: (id: string) => void;
+  onReorderAgents: (agents: Agent[]) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ agents, selectedAgentId, onSelectAgent, onCreateAgent, onDeleteAgent, onDuplicateAgent }) => {
-  return (
-    <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
-      <div className="p-4 flex justify-between items-center border-b border-gray-800">
-        <h2 className="text-lg font-semibold">Agents</h2>
-        <button onClick={onCreateAgent} className="p-1.5 hover:bg-gray-700 rounded-md transition-colors">
-          <Plus className="w-5 h-5" />
-        </button>
+const Sidebar: React.FC<SidebarProps> = (props) => {
+  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents } = props;
+
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
+  const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    agents.forEach(agent => agent.tags?.forEach(tag => tags.add(tag)));
+    return Array.from(tags).sort();
+  }, [agents]);
+  
+  const hasMetaAgents = useMemo(() => agents.some(a => a.isMeta), [agents]);
+
+  const toggleFilter = (filter: string) => {
+    setActiveFilters(prev => {
+      const newFilters = new Set(prev);
+      if (newFilters.has(filter)) {
+        newFilters.delete(filter);
+      } else {
+        newFilters.add(filter);
+      }
+      return newFilters;
+    });
+  };
+  
+  const filteredAgents = useMemo(() => {
+    if (activeFilters.size === 0) return agents;
+    return agents.filter(agent => {
+      const agentTags = new Set(agent.tags || []);
+      for (const filter of activeFilters) {
+        if (filter === '__meta__') {
+          if (!agent.isMeta) return false;
+        } else {
+          if (!agentTags.has(filter)) return false;
+        }
+      }
+      return true;
+    });
+  }, [agents, activeFilters]);
+
+  // --- Drag and Drop Handlers ---
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, agent: Agent) => {
+    if (agent.isPredefined) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedAgentId(agent.id);
+    e.dataTransfer.setData('agentId', agent.id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, targetAgent: Agent) => {
+    e.preventDefault();
+    if (draggedAgentId && draggedAgentId !== targetAgent.id && !targetAgent.isPredefined) {
+      setDropTargetId(targetAgent.id);
+    }
+  };
+  
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDropTargetId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetAgent: Agent) => {
+    e.preventDefault();
+    if (!draggedAgentId || targetAgent.isPredefined) return;
+
+    const sourceAgent = agents.find(a => a.id === draggedAgentId);
+    if (!sourceAgent || sourceAgent.id === targetAgent.id) return;
+    
+    let reorderedAgents = agents.filter(a => a.id !== draggedAgentId);
+    const targetIndex = reorderedAgents.findIndex(a => a.id === targetAgent.id);
+
+    if (targetIndex !== -1) {
+      reorderedAgents.splice(targetIndex, 0, sourceAgent);
+      onReorderAgents(reorderedAgents);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedAgentId(null);
+    setDropTargetId(null);
+  };
+
+
+  const renderAgentList = () => (
+    <>
+      <div className="p-2 space-y-2 border-b border-gray-800">
+        <h3 className="px-2 text-xs font-semibold text-gray-400">Filters</h3>
+        <div className="flex flex-wrap gap-1">
+          {hasMetaAgents && (
+            <button
+              onClick={() => toggleFilter('__meta__')}
+              className={`px-2 py-0.5 text-xs rounded-full transition-colors ${activeFilters.has('__meta__') ? 'bg-purple-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+            >
+              Meta Agents
+            </button>
+          )}
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => toggleFilter(tag)}
+              className={`px-2 py-0.5 text-xs rounded-full transition-colors flex items-center gap-1 ${activeFilters.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+            >
+              <Tag className="w-3 h-3"/> {tag}
+            </button>
+          ))}
+        </div>
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
         <ul>
-          {agents.map((agent) => (
+          {filteredAgents.map((agent) => (
             <li key={agent.id}>
               <div
-                onClick={() => onSelectAgent(agent.id)}
-                className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-colors text-sm cursor-pointer ${
-                  selectedAgentId === agent.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'
-                }`}
+                onClick={() => onSelectItem(agent.id)}
+                draggable={!agent.isPredefined}
+                onDragStart={(e) => handleDragStart(e, agent)}
+                onDragOver={handleDragOver}
+                onDragEnter={(e) => handleDragEnter(e, agent)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, agent)}
+                onDragEnd={handleDragEnd}
+                className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-all text-sm group
+                  ${!agent.isPredefined ? 'cursor-grab active:cursor-grabbing' : ''}
+                  ${selectedItemId === agent.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'}
+                  ${draggedAgentId === agent.id ? 'opacity-30' : 'opacity-100'}
+                  ${dropTargetId === agent.id ? 'border-t-2 border-indigo-400' : 'border-t-2 border-transparent'}`
+                }
               >
                 <div className="flex items-center gap-3 overflow-hidden">
                   <span className="text-xl">{agent.avatar}</span>
                   <span className="truncate flex-1">{agent.name}</span>
-                  {agent.isPredefined && <Lock className="w-3 h-3 text-gray-400 flex-shrink-0" />}
+                  {/* FIX: The 'title' prop is not valid on the Lock icon component. It has been moved to a wrapping span to provide the tooltip and fix the type error. */}
+                  {agent.isPredefined && <span title="Predefined Agent"><Lock className="w-3 h-3 text-gray-400 flex-shrink-0" /></span>}
                 </div>
-                <div className="flex items-center flex-shrink-0">
-                  <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDuplicateAgent(agent.id);
-                      }}
+                <div className="flex items-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDuplicateAgent(agent.id); }}
                       title="Duplicate Agent"
                       className="p-1 text-gray-400 hover:text-white hover:bg-indigo-500/50 rounded-md"
                     >
                       <Copy className="w-4 h-4" />
                     </button>
-                  {!agent.isPredefined && selectedAgentId === agent.id && (
+                  {!agent.isPredefined && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm(`Are you sure you want to delete "${agent.name}"?`)) {
-                          onDeleteAgent(agent.id);
-                        }
-                      }}
+                      onClick={(e) => { e.stopPropagation(); if (window.confirm(`Are you sure you want to delete "${agent.name}"?`)) { onDeleteAgent(agent.id); } }}
                       title="Delete Agent"
                       className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md ml-1"
                     >
@@ -67,6 +183,68 @@ const Sidebar: React.FC<SidebarProps> = ({ agents, selectedAgentId, onSelectAgen
           ))}
         </ul>
       </nav>
+    </>
+  );
+
+  const renderPipelineList = () => (
+     <nav className="flex-1 overflow-y-auto p-2">
+        <ul>
+          {pipelines.map((pipeline) => (
+            <li key={pipeline.id}>
+              <div
+                onClick={() => onSelectItem(pipeline.id)}
+                className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-colors text-sm cursor-pointer group ${
+                  selectedItemId === pipeline.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <Layers className="w-5 h-5 text-gray-400" />
+                  <span className="truncate flex-1">{pipeline.name}</span>
+                </div>
+                <div className="flex items-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); if (window.confirm(`Are you sure you want to delete "${pipeline.name}"?`)) { onDeletePipeline(pipeline.id); } }}
+                    title="Delete Pipeline"
+                    className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md ml-1"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </nav>
+  );
+
+  const isAgentView = view === 'agents';
+
+  return (
+    <aside className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
+      <div className="p-2">
+        <div className="flex p-1 bg-gray-800 rounded-lg">
+          <button 
+            onClick={() => onSetView('agents')}
+            className={`w-1/2 p-1.5 text-sm font-semibold rounded-md transition-colors flex items-center justify-center gap-2 ${isAgentView ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}>
+            <Bot className="w-5 h-5"/> Agents
+          </button>
+          <button 
+            onClick={() => onSetView('pipelines')}
+            className={`w-1/2 p-1.5 text-sm font-semibold rounded-md transition-colors flex items-center justify-center gap-2 ${!isAgentView ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}>
+            <Layers className="w-5 h-5"/> Pipelines
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 flex justify-between items-center border-b border-t border-gray-800">
+        <h2 className="text-lg font-semibold">{isAgentView ? 'Agents' : 'Pipelines'}</h2>
+        <button onClick={isAgentView ? onCreateAgent : onCreatePipeline} className="p-1.5 hover:bg-gray-700 rounded-md transition-colors">
+          <Plus className="w-5 h-5" />
+        </button>
+      </div>
+      
+      {isAgentView ? renderAgentList() : renderPipelineList()}
+      
     </aside>
   );
 };

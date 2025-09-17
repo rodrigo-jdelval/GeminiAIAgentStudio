@@ -1,3 +1,4 @@
+
 import React, { useRef } from 'react';
 import { FileDown, FileUp, HelpCircle, Settings } from './icons/EditorIcons';
 
@@ -42,14 +43,14 @@ const Header: React.FC<HeaderProps> = ({ onImport, onExport, onShowADKConfig, on
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
           title="Import agent from a .json file"
         >
-          <FileUp className="w-4 h-4" /> Import
+          <FileUp className="w-4 h-4" /> Import Config
         </button>
         <button 
           onClick={onExport}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
           title="Export agent to a .json file"
         >
-          <FileDown className="w-4 h-4" /> Export
+          <FileDown className="w-4 h-4" /> Export Config
         </button>
          <button 
           onClick={onShowADKConfig}

@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from '@google/genai';
-import type { Agent, ReActStep, ToolName } from '../types';
+import type { Agent, ReActStep, ToolName, KnowledgeFile, Pipeline, PipelineStep } from '../types';
 
 if (!process.env.API_KEY) {
   alert("API_KEY environment variable not set. Please set it to use the Gemini API.");
@@ -10,6 +10,23 @@ if (!process.env.API_KEY) {
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const model = 'gemini-2.5-flash';
 const MAX_STEPS = 10; 
+
+// A simplified Part type for building multimodal requests
+interface Part {
+  text?: string;
+  inlineData?: {
+    mimeType?: string;
+    // FIX: The type from the Gemini API response has 'data' as an optional property, which conflicted with the local type that required it. Making it optional resolves the type error.
+    data?: string;
+  };
+}
+
+// A simplified Content type for managing chat history
+interface Content {
+  role: string;
+  parts: Part[];
+}
+
 
 // --- Tool Implementations ---
 
@@ -92,7 +109,7 @@ async function runWebBrowser(url: string): Promise<string> {
     return content.substring(0, 4000) + '... (content truncated)';
   } catch (error) {
     console.error('Error in WebBrowser tool:', error);
-    return `Error: Could not retrieve content from ${url}. Check if the URL is correct and accessible.`;
+    return `Error: Could not retrieve content from ${url}. Check if the correct and accessible.`;
   }
 }
 
@@ -113,18 +130,12 @@ async function executeTool(toolName: ToolName, args: string): Promise<string> {
 }
 
 function parseAction(text: string): { tool: string; args: string } | null {
-  const actionRegex = /Action:\s*(\w+)\(([\s\S]*)\)/s;
+  const actionRegex = /Action:\s*([\w_]+)\(([\s\S]*)\)/s;
   const match = text.match(actionRegex);
   if (match) {
     let args = match[2].trim();
     
-    // Handle cases where the model might output `key="value"` inside the parentheses
-    const keyValMatch = args.match(/^\w+\s*=\s*"(.*)"$/);
-    if (keyValMatch && keyValMatch[1]) {
-      args = keyValMatch[1];
-    } 
-    // Handle standard quoted strings, stripping the outer quotes
-    else if ((args.startsWith('"') && args.endsWith('"')) || (args.startsWith("'") && args.endsWith("'")) || (args.startsWith("`") && args.endsWith("`"))) {
+    if ((args.startsWith('"') && args.endsWith('"')) || (args.startsWith("'") && args.endsWith("'")) || (args.startsWith("`") && args.endsWith("`"))) {
       args = args.substring(1, args.length - 1);
     }
     
@@ -138,23 +149,55 @@ function parseAction(text: string): { tool: string; args: string } | null {
 export const runAgent = async (
   agent: Agent,
   prompt: string,
+  allAgents: Agent[],
   onStep: (step: { thought: string; action?: string; observation?: string; finalAnswer?: string }, isFinal: boolean) => void
 ) => {
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  let context = `Current date is ${today}. You must use this date to interpret any time-relative queries from the user (e.g., "last week", "today").\n\n${agent.systemPrompt}\n\nHere is the user's request:\n${prompt}`;
-  let stepCount = 0;
+  const history: Content[] = [];
+  const today = new Date().toISOString().split('T')[0];
+  let systemPrompt = agent.systemPrompt;
   
+  if (agent.isMeta && agent.subAgentIds && agent.subAgentIds.length > 0) {
+    const callableAgents = allAgents.filter(a => agent.subAgentIds?.includes(a.id));
+    if (callableAgents.length > 0) {
+      const agentToolDescriptions = callableAgents.map(a => `- Agent_${a.name.replace(/\s+/g, '_')}(task_description): ${a.description}`).join('\n');
+      systemPrompt += `\n\nYou can also use the following specialized agents as tools:\n${agentToolDescriptions}`;
+    }
+  }
+
+  const initialUserParts: Part[] = [];
+  const textContentParts: string[] = [];
+
+  if (agent.files && agent.files.length > 0) {
+    const textFilesContents = agent.files.filter(f => f.content).map(f => `--- START FILE: ${f.name} ---\n${f.content}\n--- END FILE: ${f.name} ---`);
+    agent.files.forEach(f => {
+      if (f.base64Content && f.mimeType) {
+        initialUserParts.push({ inlineData: { mimeType: f.mimeType, data: f.base64Content } });
+      }
+    });
+    if (textFilesContents.length > 0) {
+      textContentParts.push(`Use the following documents as your primary source of information:\n\n${textFilesContents.join('\n\n')}`);
+    }
+  }
+
+  textContentParts.push(`Current date is ${today}.`);
+  textContentParts.push(`User's request:\n${prompt}`);
+  initialUserParts.push({ text: textContentParts.join('\n\n') });
+  history.push({ role: 'user', parts: initialUserParts });
+
+  let stepCount = 0;
   const enabledTools = agent.tools.filter(t => t.enabled).map(t => t.name);
 
   while (stepCount < MAX_STEPS) {
     stepCount++;
     
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: [{ role: 'user', parts: [{ text: context }] }],
-    });
+    const result = await ai.models.generateContent({ model, contents: history, config: { systemInstruction: systemPrompt } });
 
-    const responseText = response.text ?? '';
+    if (result.candidates?.[0]?.content) {
+      const modelContent = result.candidates[0].content;
+      history.push({ role: modelContent.role || 'model', parts: modelContent.parts });
+    }
+
+    const responseText = result.text ?? '';
     
     const thoughtMatch = responseText.match(/Thought:\s*([\s\S]*?)(?=Action:|Final Answer:|$)/);
     const thought = thoughtMatch ? thoughtMatch[1].trim() : "I need to determine the next step.";
@@ -166,23 +209,97 @@ export const runAgent = async (
     }
 
     const action = parseAction(responseText);
-    
-    if (action && enabledTools.includes(action.tool as ToolName)) {
-        const observation = await executeTool(action.tool as ToolName, action.args);
-        const formattedAction = `${action.tool}(${JSON.stringify(action.args)})`;
-        const stepResult: ReActStep = { thought, action: formattedAction, observation };
-        onStep(stepResult, false);
-        context += `\nThought: ${thought}\nAction: ${formattedAction}\nObservation: ${observation}`;
-    } else {
-        // The model failed to provide a valid action or final answer.
-        // We will add its response as a thought and provide corrective feedback in the context for the next loop.
-        const invalidResponseAsThought = responseText.trim() || thought;
-        const correctiveFeedback = "That was not a valid Action or Final Answer. You must use the format 'Action: ToolName(args)' or 'Final Answer: [your answer]'. Please try again.";
+    let observation = '';
+
+    if (action) {
+      const formattedAction = `${action.tool}(${JSON.stringify(action.args)})`;
+      
+      if (enabledTools.includes(action.tool as ToolName)) {
+        observation = await executeTool(action.tool as ToolName, action.args);
+      } else if (agent.isMeta && action.tool.startsWith('Agent_')) {
+        const agentName = action.tool.replace('Agent_', '').replace(/_/g, ' ');
+        const subAgent = allAgents.find(a => a.name === agentName);
         
-        onStep({ thought: invalidResponseAsThought, observation: correctiveFeedback }, false);
-        context += `\nThought: ${invalidResponseAsThought}\nObservation: ${correctiveFeedback}`;
+        if (subAgent && agent.subAgentIds?.includes(subAgent.id)) {
+           observation = await new Promise<string>((resolve, reject) => {
+             runAgent(subAgent, action.args, allAgents, (step, isFinal) => {
+                if(isFinal) resolve(step.finalAnswer || "Sub-agent finished without a final answer.");
+             }).catch(reject);
+           });
+        } else {
+          observation = `Error: Sub-agent '${agentName}' not found or not callable.`;
+        }
+      } else {
+        observation = `Error: Unknown or disabled tool '${action.tool}'.`;
+      }
+      onStep({ thought, action: formattedAction, observation }, false);
+      history.push({ role: 'user', parts: [{ text: `Observation: ${observation}` }] });
+    } else {
+      const correctiveFeedback = "Invalid format. You must use 'Action: ToolName(args)' or 'Final Answer: [your answer]'.";
+      onStep({ thought: responseText.trim() || thought, observation: correctiveFeedback }, false);
+      history.push({ role: 'user', parts: [{ text: `Observation: ${correctiveFeedback}` }] });
     }
   }
   
   onStep({ thought: "Max steps reached.", finalAnswer: "I have reached the maximum number of steps and could not find a conclusive answer." }, true);
+};
+
+
+// --- Pipeline Runner ---
+
+// Helper to adapt callback-based runAgent to a promise for pipeline execution
+function runAgentForPipeline(
+    agent: Agent,
+    prompt: string,
+    allAgents: Agent[],
+    onThinking: (step: ReActStep) => void
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        try {
+            runAgent(agent, prompt, allAgents, (step, isFinal) => {
+                if (!isFinal) {
+                    onThinking({ thought: step.thought, action: step.action, observation: step.observation });
+                } else {
+                    resolve(step.finalAnswer ?? "Agent finished without providing a final answer.");
+                }
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+export const runPipeline = async (
+  pipeline: Pipeline,
+  initialPrompt: string,
+  allAgents: Agent[],
+  onStep: (step: PipelineStep) => void
+): Promise<string> => {
+  let currentInput = initialPrompt;
+
+  for (const agentId of pipeline.agentIds) {
+    const agent = allAgents.find(a => a.id === agentId);
+    if (!agent) {
+      throw new Error(`Agent with ID ${agentId} not found in pipeline "${pipeline.name}".`);
+    }
+    
+    const thinkingSteps: ReActStep[] = [];
+    const onThinking = (step: ReActStep) => {
+        thinkingSteps.push(step);
+    };
+
+    const output = await runAgentForPipeline(agent, currentInput, allAgents, onThinking);
+    
+    onStep({
+      agentId: agent.id,
+      agentName: agent.name,
+      input: currentInput,
+      output: output,
+      thinkingSteps: thinkingSteps
+    });
+
+    currentInput = output; // The output of one agent is the input for the next
+  }
+
+  return currentInput; // The final output of the pipeline
 };
