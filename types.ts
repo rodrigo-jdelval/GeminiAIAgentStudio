@@ -44,11 +44,17 @@ export interface ReActStep {
   observation?: string;
 }
 
+export interface PipelineStepConfig {
+  agentId: string;
+  includePreviousOutput: boolean;
+}
+
 export interface Pipeline {
   id: string;
   name: string;
   description: string;
-  agentIds: string[];
+  steps: PipelineStepConfig[];
+  predefinedQuestions?: string[];
 }
 
 export interface PipelineStep {

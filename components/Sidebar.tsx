@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { Agent, Pipeline } from '../types';
-import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag, ArrowUp, ArrowDown } from './icons/EditorIcons';
+import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag, ArrowUp, ArrowDown, Sparkles } from './icons/EditorIcons';
 
 interface SidebarProps {
   view: 'agents' | 'pipelines';
@@ -11,6 +11,8 @@ interface SidebarProps {
   selectedItemId: string | null;
   onSelectItem: (id: string) => void;
   onCreateAgent: () => void;
+  onShowCreateAgentModal: () => void;
+  onShowCreatePipelineModal: () => void;
   onDeleteAgent: (id: string) => void;
   onDuplicateAgent: (id: string) => void;
   onCreatePipeline: () => void;
@@ -20,7 +22,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = (props) => {
-  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents, onMoveAgent } = props;
+  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onShowCreateAgentModal, onShowCreatePipelineModal, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents, onMoveAgent } = props;
 
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
@@ -265,9 +267,18 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
 
       <div className="p-4 flex justify-between items-center border-b border-t border-gray-800">
         <h2 className="text-lg font-semibold">{isAgentView ? 'Agents' : 'Pipelines'}</h2>
-        <button onClick={isAgentView ? onCreateAgent : onCreatePipeline} className="p-1.5 hover:bg-gray-700 rounded-md transition-colors">
-          <Plus className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button 
+            onClick={isAgentView ? onShowCreateAgentModal : onShowCreatePipelineModal} 
+            className="p-1.5 hover:bg-gray-700 rounded-md transition-colors"
+            title={isAgentView ? "Create Agent with AI" : "Create Pipeline with AI"}
+          >
+            <Sparkles className="w-5 h-5" />
+          </button>
+          <button onClick={isAgentView ? onCreateAgent : onCreatePipeline} className="p-1.5 hover:bg-gray-700 rounded-md transition-colors" title={isAgentView ? 'Create Agent' : 'Create Pipeline'}>
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
       </div>
       
       {isAgentView ? renderAgentList() : renderPipelineList()}

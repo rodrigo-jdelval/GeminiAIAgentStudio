@@ -1,7 +1,9 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import type { Agent, Message, ReActStep, Pipeline, PipelineMessage, PipelineStep } from '../types';
 import { runAgent, runPipeline } from '../services/geminiService';
-import { Send, Bot, ChevronsRight } from './icons/EditorIcons';
+import { Send, Bot, ChevronsRight, Download } from './icons/EditorIcons';
+import { exportTextToFile } from '../utils/fileUtils';
 
 interface PlaygroundProps {
   view: 'agents' | 'pipelines';
@@ -36,7 +38,39 @@ const AgentChatPlayground: React.FC<AgentChatPlaygroundProps> = ({ agent, allAge
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); };
 
   useEffect(scrollToBottom, [messages]);
-  useEffect(() => { setMessages([]); }, [agent]);
+  
+  useEffect(() => {
+    setMessages([]);
+  }, [agent]);
+
+  const handleExportChat = () => {
+    if (messages.length === 0) return;
+    
+    const chatContent = messages.map(message => {
+      if (message.role === 'user') {
+        return `[USER]\n${message.content}`;
+      }
+      
+      let agentOutput = `[AGENT: ${agent.name}]\n`;
+      if(message.thinkingSteps && message.thinkingSteps.length > 0) {
+        agentOutput += message.thinkingSteps.map(step => {
+          let stepText = `Thought: ${step.thought}`;
+          if (step.action) stepText += `\nAction: ${step.action}`;
+          if (step.observation) stepText += `\nObservation: ${step.observation}`;
+          return stepText;
+        }).join('\n---\n');
+      }
+      if (message.content) {
+        agentOutput += `\n\nFinal Answer: ${message.content}`;
+      }
+      return agentOutput;
+
+    }).join('\n\n================================\n\n');
+
+    const filename = `${agent.name.replace(/\s+/g, '_').toLowerCase()}_chat_export.txt`;
+    exportTextToFile(chatContent, filename);
+  };
+
 
   const handleSendMessage = async (messageContent: string) => {
     if (!messageContent.trim() || isLoading) return;
@@ -86,9 +120,15 @@ const AgentChatPlayground: React.FC<AgentChatPlaygroundProps> = ({ agent, allAge
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-gray-800 flex items-center gap-3">
-        <Bot className="w-6 h-6 text-gray-400" />
-        <h3 className="text-lg font-semibold">Agent Playground</h3>
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Bot className="w-6 h-6 text-gray-400" />
+          <h3 className="text-lg font-semibold">Agent Playground</h3>
+        </div>
+        <button onClick={handleExportChat} disabled={messages.length === 0} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-800 hover:bg-gray-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Export Chat">
+          <Download className="w-4 h-4"/>
+          Export Chat
+        </button>
       </div>
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         {messages.length === 0 && agent.predefinedQuestions && agent.predefinedQuestions.length > 0 && (
@@ -166,19 +206,18 @@ const PipelineRunPlayground: React.FC<PipelineRunPlaygroundProps> = ({ pipeline,
   useEffect(scrollToBottom, [messages]);
   useEffect(() => { setMessages([]); }, [pipeline]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || pipeline.agentIds.length === 0) return;
+  const runPipelineFromInput = async (messageContent: string) => {
+    if (!messageContent.trim() || isLoading || pipeline.steps.length === 0) return;
 
-    const userMessage: PipelineMessage = { id: `p-msg-${Date.now()}`, role: 'user', input: input, steps: [] };
-    const pipelineMessage: PipelineMessage = { id: `p-msg-${Date.now() + 1}`, role: 'pipeline', input: input, steps: [] };
+    const userMessage: PipelineMessage = { id: `p-msg-${Date.now()}`, role: 'user', input: messageContent, steps: [] };
+    const pipelineMessage: PipelineMessage = { id: `p-msg-${Date.now() + 1}`, role: 'pipeline', input: messageContent, steps: [] };
     setMessages([userMessage, pipelineMessage]);
     
     setInput('');
     setIsLoading(true);
 
     try {
-      await runPipeline(pipeline, input, allAgents, (step) => {
+      await runPipeline(pipeline, messageContent, allAgents, (step) => {
         setMessages(prev => prev.map(msg => msg.id === pipelineMessage.id ? { ...msg, steps: [...msg.steps, step] } : msg));
       });
     } catch (error) {
@@ -188,6 +227,15 @@ const PipelineRunPlayground: React.FC<PipelineRunPlaygroundProps> = ({ pipeline,
     }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    runPipelineFromInput(input);
+  };
+
+  const handlePredefinedQuestionClick = (question: string) => {
+    runPipelineFromInput(question);
+  };
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col overflow-hidden">
       <div className="p-4 border-b border-gray-800 flex items-center gap-3">
@@ -195,6 +243,23 @@ const PipelineRunPlayground: React.FC<PipelineRunPlaygroundProps> = ({ pipeline,
         <h3 className="text-lg font-semibold">Pipeline Playground</h3>
       </div>
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+        {messages.length === 0 && pipeline.predefinedQuestions && pipeline.predefinedQuestions.length > 0 && (
+          <div className="p-4 bg-gray-800/50 rounded-lg">
+            <h4 className="text-sm font-semibold text-gray-400 mb-3">Example Prompts</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {pipeline.predefinedQuestions.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => handlePredefinedQuestionClick(q)}
+                  disabled={isLoading}
+                  className="text-left p-3 bg-gray-700/70 hover:bg-gray-700 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {messages.map(message => (
           message.role === 'user' ? (
             <div key={message.id} className="flex justify-end">
@@ -232,12 +297,12 @@ const PipelineRunPlayground: React.FC<PipelineRunPlaygroundProps> = ({ pipeline,
                   <div className="p-3 pt-0">{step.output}</div>
                 </div>
               ))}
-              {isLoading && message.steps.length < pipeline.agentIds.length && (
+              {isLoading && message.steps.length < pipeline.steps.length && (
                  <div className="p-3 flex items-center gap-2 text-gray-400 bg-gray-800 rounded-lg">
                     <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></div>
                     <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse delay-75"></div>
                     <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse delay-150"></div>
-                    <span className="text-sm">Running pipeline... (Step {message.steps.length + 1} of {pipeline.agentIds.length})</span>
+                    <span className="text-sm">Running pipeline... (Step {message.steps.length + 1} of {pipeline.steps.length})</span>
                  </div>
               )}
               {message.error && <div className="p-3 bg-red-900/50 text-red-300 rounded-lg">Error: {message.error}</div>}
@@ -248,12 +313,12 @@ const PipelineRunPlayground: React.FC<PipelineRunPlaygroundProps> = ({ pipeline,
       </div>
       <div className="p-4 border-t border-gray-800">
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Provide initial input for the pipeline..." disabled={isLoading || pipeline.agentIds.length === 0} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 transition-colors disabled:opacity-50" />
-          <button type="submit" disabled={isLoading || pipeline.agentIds.length === 0} className="p-2 bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors">
+          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Provide initial input for the pipeline..." disabled={isLoading || pipeline.steps.length === 0} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 transition-colors disabled:opacity-50" />
+          <button type="submit" disabled={isLoading || pipeline.steps.length === 0} className="p-2 bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors">
             <ChevronsRight className="w-5 h-5 text-white" />
           </button>
         </form>
-        {pipeline.agentIds.length === 0 && <p className="text-xs text-yellow-500 text-center mt-2">This pipeline is empty. Add agents in the editor to run it.</p>}
+        {pipeline.steps.length === 0 && <p className="text-xs text-yellow-500 text-center mt-2">This pipeline is empty. Add agents in the editor to run it.</p>}
       </div>
     </div>
   );

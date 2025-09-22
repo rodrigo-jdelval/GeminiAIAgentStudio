@@ -60,7 +60,7 @@ const ADKConfigModal: React.FC<ADKConfigModalProps> = ({ agent, onClose, onSave 
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg max-w-3xl w-full max-h-[95vh] flex flex-col">
+      <div className="bg-gray-900 border border-gray-700 rounded-lg max-w-4xl w-full h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
           <h2 className="text-xl font-bold">ADK Configuration</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-700 rounded-md transition-colors">

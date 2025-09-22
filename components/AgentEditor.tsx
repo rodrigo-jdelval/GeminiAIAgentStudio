@@ -1,8 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
-import type { Agent, Pipeline, Tool, KnowledgeFile } from '../types';
-// FIX: Import the 'X' icon to be used in the tag removal button.
-import { Info, Paperclip, FileText, Trash2, Tag, ChevronsRight, X } from './icons/EditorIcons';
+import React, { useState, useEffect, useRef } from 'react';
+import type { Agent, Pipeline, Tool, KnowledgeFile, PipelineStepConfig } from '../types';
+import { Info, Paperclip, FileText, Trash2, Tag, ChevronsRight, X, Link2, Unlink2 } from './icons/EditorIcons';
 
 interface EditorProps {
   view: 'agents' | 'pipelines';
@@ -212,6 +211,8 @@ interface PipelineEditorFormProps {
 
 const PipelineEditorForm: React.FC<PipelineEditorFormProps> = ({ pipeline, allAgents, onUpdatePipeline }) => {
   const [formData, setFormData] = useState<Pipeline>(pipeline);
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
 
   useEffect(() => {
     setFormData(pipeline);
@@ -225,21 +226,52 @@ const PipelineEditorForm: React.FC<PipelineEditorFormProps> = ({ pipeline, allAg
   };
   
   const addAgentToPipeline = (agentId: string) => {
-    const updatedPipeline = { ...formData, agentIds: [...formData.agentIds, agentId] };
+    const newStep: PipelineStepConfig = {
+      agentId,
+      includePreviousOutput: formData.steps.length > 0, // Default to true if not the first agent
+    };
+    const updatedPipeline = { ...formData, steps: [...formData.steps, newStep] };
     setFormData(updatedPipeline);
     onUpdatePipeline(updatedPipeline);
   };
   
   const removeAgentFromPipeline = (index: number) => {
-    const updatedIds = [...formData.agentIds];
-    updatedIds.splice(index, 1);
-    const updatedPipeline = { ...formData, agentIds: updatedIds };
+    const updatedSteps = [...formData.steps];
+    updatedSteps.splice(index, 1);
+    const updatedPipeline = { ...formData, steps: updatedSteps };
     setFormData(updatedPipeline);
     onUpdatePipeline(updatedPipeline);
   };
 
-  const availableAgents = allAgents.filter(a => !formData.agentIds.includes(a.id));
-  const pipelineAgents = formData.agentIds.map(id => allAgents.find(a => a.id === id)).filter(Boolean) as Agent[];
+  const toggleLink = (index: number) => {
+    const updatedSteps = [...formData.steps];
+    if (updatedSteps[index]) {
+      updatedSteps[index].includePreviousOutput = !updatedSteps[index].includePreviousOutput;
+      const updatedPipeline = { ...formData, steps: updatedSteps };
+      setFormData(updatedPipeline);
+      onUpdatePipeline(updatedPipeline);
+    }
+  };
+  
+  const handleDragSort = () => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    const newSteps = [...formData.steps];
+    const draggedItemContent = newSteps.splice(dragItem.current, 1)[0];
+    newSteps.splice(dragOverItem.current, 0, draggedItemContent);
+    dragItem.current = null;
+    dragOverItem.current = null;
+    
+    const updatedPipeline = { ...formData, steps: newSteps };
+    setFormData(updatedPipeline);
+    onUpdatePipeline(updatedPipeline);
+  };
+
+  const pipelineAgents = formData.steps.map(step => ({
+    ...step,
+    agent: allAgents.find(a => a.id === step.agentId)
+  })).filter(item => item.agent) as (PipelineStepConfig & { agent: Agent })[];
+
+  const availableAgents = allAgents.filter(a => !formData.steps.some(step => step.agentId === a.id));
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col overflow-hidden">
@@ -248,25 +280,43 @@ const PipelineEditorForm: React.FC<PipelineEditorFormProps> = ({ pipeline, allAg
         <div><label htmlFor="name" className="block text-sm font-medium text-gray-400 mb-1">Pipeline Name</label><input type="text" id="name" name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 transition-colors" /></div>
         <div><label htmlFor="description" className="block text-sm font-medium text-gray-400 mb-1">Description</label><textarea id="description" name="description" rows={2} value={formData.description} onChange={handleInputChange} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 transition-colors" /></div>
         <div>
-          <h4 className="text-sm font-medium text-gray-400 mb-2">Pipeline Steps</h4>
-          <div className="bg-gray-800 p-3 rounded-md space-y-3">
+          <h4 className="text-sm font-medium text-gray-400 mb-2">Pipeline Flow</h4>
+          <div className="bg-gray-800 p-3 rounded-md min-h-[120px]">
             {pipelineAgents.length > 0 ? (
-              pipelineAgents.map((agent, index) => (
-                <div key={`${agent.id}-${index}`} className="flex items-center gap-3 bg-gray-900 p-2 rounded-md">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-indigo-300 font-bold">{index + 1}</div>
-                  <div className="flex-1 flex items-center gap-3">
-                     <span className="text-xl">{agent.avatar}</span>
-                     <span className="font-semibold">{agent.name}</span>
-                  </div>
-                   <button onClick={() => removeAgentFromPipeline(index)} className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md"><Trash2 className="w-4 h-4" /></button>
-                </div>
-              ))
+              <div className="flex items-center gap-2 flex-wrap">
+                {pipelineAgents.map((step, index) => (
+                  <React.Fragment key={`${step.agentId}-${index}`}>
+                    <div 
+                      draggable
+                      onDragStart={() => dragItem.current = index}
+                      onDragEnter={() => dragOverItem.current = index}
+                      onDragEnd={handleDragSort}
+                      onDragOver={(e) => e.preventDefault()}
+                      className="flex items-center gap-3 bg-gray-900 p-2 rounded-md cursor-grab active:cursor-grabbing"
+                    >
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-indigo-300 font-bold flex-shrink-0">{index + 1}</div>
+                      <div className="flex-1 flex items-center gap-2">
+                        <span className="text-xl">{step.agent.avatar}</span>
+                        <span className="font-semibold text-sm truncate">{step.agent.name}</span>
+                      </div>
+                      <button onClick={() => removeAgentFromPipeline(index)} className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+
+                    {index < pipelineAgents.length - 1 && (
+                      <div className="flex flex-col items-center">
+                         <button onClick={() => toggleLink(index + 1)} className="p-1 text-gray-400 hover:text-white rounded-md" title={formData.steps[index + 1].includePreviousOutput ? 'Unlink: Use original input' : 'Link: Use previous output'}>
+                           {formData.steps[index + 1].includePreviousOutput ? <Link2 className="w-5 h-5 text-indigo-400" /> : <Unlink2 className="w-5 h-5" />}
+                         </button>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
             ) : (
-              <p className="text-center text-gray-500 text-sm py-4">This pipeline is empty. Add agents from the list below.</p>
+              <div className="flex items-center justify-center h-full text-center text-gray-500 text-sm py-10">This pipeline is empty. Add agents from the list below.</div>
             )}
           </div>
         </div>
-
         <div>
           <h4 className="text-sm font-medium text-gray-400 mb-2">Available Agents</h4>
           <div className="space-y-2">

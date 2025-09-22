@@ -1,6 +1,6 @@
 
-import { GoogleGenAI } from '@google/genai';
-import type { Agent, ReActStep, ToolName, KnowledgeFile, Pipeline, PipelineStep } from '../types';
+import { GoogleGenAI, Type } from '@google/genai';
+import type { Agent, ReActStep, ToolName, KnowledgeFile, Pipeline, PipelineStep, Tool, PipelineStepConfig } from '../types';
 
 if (!process.env.API_KEY) {
   alert("API_KEY environment variable not set. Please set it to use the Gemini API.");
@@ -16,7 +16,6 @@ interface Part {
   text?: string;
   inlineData?: {
     mimeType?: string;
-    // FIX: The type from the Gemini API response has 'data' as an optional property, which conflicted with the local type that required it. Making it optional resolves the type error.
     data?: string;
   };
 }
@@ -275,13 +274,15 @@ export const runPipeline = async (
   allAgents: Agent[],
   onStep: (step: PipelineStep) => void
 ): Promise<string> => {
-  let currentInput = initialPrompt;
+  let previousStepOutput = initialPrompt;
 
-  for (const agentId of pipeline.agentIds) {
-    const agent = allAgents.find(a => a.id === agentId);
+  for (const stepConfig of pipeline.steps) {
+    const agent = allAgents.find(a => a.id === stepConfig.agentId);
     if (!agent) {
-      throw new Error(`Agent with ID ${agentId} not found in pipeline "${pipeline.name}".`);
+      throw new Error(`Agent with ID ${stepConfig.agentId} not found in pipeline "${pipeline.name}".`);
     }
+    
+    const currentInput = stepConfig.includePreviousOutput ? previousStepOutput : initialPrompt;
     
     const thinkingSteps: ReActStep[] = [];
     const onThinking = (step: ReActStep) => {
@@ -298,8 +299,170 @@ export const runPipeline = async (
       thinkingSteps: thinkingSteps
     });
 
-    currentInput = output; // The output of one agent is the input for the next
+    previousStepOutput = output;
   }
 
-  return currentInput; // The final output of the pipeline
+  return previousStepOutput;
+};
+
+// --- AI Agent Creator ---
+export const generateAgentFromPrompt = async (description: string): Promise<Omit<Agent, 'id' | 'isPredefined' | 'files' | 'isMeta' | 'subAgentIds'>> => {
+  const systemInstruction = `You are an Agent Architect. Your task is to design an AI agent based on a user's description. You must generate a JSON object that defines the agent's properties.
+
+Available tools: 'GoogleSearch', 'HttpRequest', 'CodeInterpreter', 'WebBrowser'.
+
+Analyze the user's request and:
+1.  Create a short, descriptive 'name' for the agent.
+2.  Write a one-sentence 'description' of its function.
+3.  Choose a single, appropriate emoji for the 'avatar'.
+4.  Write a detailed 'systemPrompt' that instructs the agent on its persona, goals, and how to use tools in a ReAct format (Thought, Action, Observation) if necessary. If the agent should not use tools, instruct it to provide the Final Answer directly.
+5.  Based on the agent's purpose, create a 'tools' array. For each tool needed, include an object like {"name": "ToolName", "enabled": true}. Only include tools that are absolutely necessary. If no tools are needed, provide an empty array.
+6.  Generate a list of 1-3 relevant 'tags' (e.g., "research", "writing").
+7.  Create an array of 2-3 example 'predefinedQuestions' a user might ask this agent.
+
+Your output MUST be a valid JSON object conforming to the provided schema. Do not include any other text or explanations.`;
+
+  const agentSchema = {
+    type: Type.OBJECT,
+    properties: {
+      name: { type: Type.STRING, description: 'A short, descriptive name for the agent.' },
+      description: { type: Type.STRING, description: "A one-sentence summary of the agent's purpose." },
+      avatar: { type: Type.STRING, description: 'A single emoji to represent the agent.' },
+      systemPrompt: { type: Type.STRING, description: 'The detailed system instructions for the agent.' },
+      tools: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING, description: 'The name of the tool.' },
+            enabled: { type: Type.BOOLEAN, description: 'Whether the tool is enabled.' },
+          },
+        },
+        description: 'A list of tools the agent can use.'
+      },
+      tags: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'A list of relevant tags for categorization.'
+      },
+      predefinedQuestions: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'A list of example questions for the user.'
+      }
+    },
+    required: ["name", "description", "avatar", "systemPrompt", "tools", "tags", "predefinedQuestions"]
+  };
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: description,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: agentSchema,
+      },
+    });
+
+    const jsonText = response.text.trim();
+    if (!jsonText) {
+      throw new Error("The model returned an empty response.");
+    }
+
+    const generatedAgent = JSON.parse(jsonText);
+
+    // Validate and clean up the generated tools array
+    const validTools: ToolName[] = ['GoogleSearch', 'HttpRequest', 'CodeInterpreter', 'WebBrowser'];
+    if (Array.isArray(generatedAgent.tools)) {
+        generatedAgent.tools = generatedAgent.tools.filter((tool: Partial<Tool>) => 
+            tool && typeof tool.name === 'string' && validTools.includes(tool.name as ToolName) && tool.enabled === true
+        );
+    } else {
+        generatedAgent.tools = [];
+    }
+
+    return generatedAgent;
+  } catch (error) {
+    console.error("Error generating agent from prompt:", error);
+    throw new Error(`Failed to generate agent configuration. The model may have returned an invalid format. Details: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+// --- AI Pipeline Creator ---
+export const generatePipelineFromPrompt = async (
+  description: string,
+  allAgents: Agent[]
+): Promise<Partial<Pipeline>> => {
+  const systemInstruction = `You are a Workflow Architect. Your task is to design an AI agent pipeline based on a user's description. You must generate a JSON object that defines the pipeline's properties.
+
+You have the following agents available to use as steps in the pipeline. Your primary goal is to select the correct agents in the correct order.
+
+Available Agents:
+${allAgents.map(a => `- ID: "${a.id}", Name: "${a.name}", Description: "${a.description}"`).join('\n')}
+
+Analyze the user's request and:
+1.  Create a short, descriptive 'name' for the pipeline.
+2.  Write a one-sentence 'description' of its function.
+3.  Create a 'steps' array. Each element in the array must be an object representing a step.
+4.  For each step, you MUST include the 'agentId' of one of the available agents.
+5.  For each step, you MUST decide if it should receive the output from the previous step. Set 'includePreviousOutput' to 'true' for this. For the very first step, this should always be 'false'. For subsequent steps, it should usually be 'true' to chain them together.
+
+Your output MUST be a valid JSON object conforming to the provided schema. Do not include any other text or explanations.`;
+
+  const pipelineSchema = {
+    type: Type.OBJECT,
+    properties: {
+      name: { type: Type.STRING, description: 'A short, descriptive name for the pipeline.' },
+      description: { type: Type.STRING, description: "A one-sentence summary of the pipeline's purpose." },
+      steps: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            agentId: { type: Type.STRING, description: 'The ID of the agent for this step.' },
+            includePreviousOutput: { type: Type.BOOLEAN, description: 'Whether to use the output of the previous step as input.' },
+          },
+          required: ["agentId", "includePreviousOutput"]
+        },
+        description: 'The sequence of agent steps in the pipeline.'
+      },
+    },
+    required: ["name", "description", "steps"]
+  };
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: description,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: pipelineSchema,
+      },
+    });
+
+    const jsonText = response.text.trim();
+    if (!jsonText) {
+      throw new Error("The model returned an empty response.");
+    }
+    
+    const generatedPipeline = JSON.parse(jsonText) as { name: string; description: string; steps: PipelineStepConfig[]};
+
+    // Validate that the returned agentIds are valid
+    if (Array.isArray(generatedPipeline.steps)) {
+      const validAgentIds = new Set(allAgents.map(a => a.id));
+      generatedPipeline.steps = generatedPipeline.steps.filter((step: any) => 
+        step && typeof step.agentId === 'string' && validAgentIds.has(step.agentId)
+      );
+    } else {
+        generatedPipeline.steps = [];
+    }
+
+    return generatedPipeline;
+
+  } catch (error) {
+    console.error("Error generating pipeline from prompt:", error);
+    throw new Error(`Failed to generate pipeline configuration. The model may have returned an invalid format. Details: ${error instanceof Error ? error.message : String(error)}`);
+  }
 };
