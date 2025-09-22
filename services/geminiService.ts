@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
-import type { Agent, ReActStep, ToolName, KnowledgeFile, Pipeline, PipelineStep, Tool, PipelineStepConfig } from '../types';
+// Fix: Import GeneratedPipeline type
+import type { Agent, ReActStep, ToolName, Pipeline, PipelineStep, Tool, PipelineNode, GeneratedPipeline } from '../types';
 
 if (!process.env.API_KEY) {
   alert("API_KEY environment variable not set. Please set it to use the Gemini API.");
@@ -134,6 +135,13 @@ function parseAction(text: string): { tool: string; args: string } | null {
   if (match) {
     let args = match[2].trim();
     
+    // Handle cases like "query=\"...\"" or "uri=\"...\""
+    const keyValuePairMatch = args.match(/^\s*\w+\s*=\s*(".*"|'.*'|`.*`)\s*$/);
+    if (keyValuePairMatch && keyValuePairMatch[1]) {
+        args = keyValuePairMatch[1];
+    }
+
+    // Remove quotes from the beginning and end of the arguments string
     if ((args.startsWith('"') && args.endsWith('"')) || (args.startsWith("'") && args.endsWith("'")) || (args.startsWith("`") && args.endsWith("`"))) {
       args = args.substring(1, args.length - 1);
     }
@@ -149,7 +157,8 @@ export const runAgent = async (
   agent: Agent,
   prompt: string,
   allAgents: Agent[],
-  onStep: (step: { thought: string; action?: string; observation?: string; finalAnswer?: string }, isFinal: boolean) => void
+  onStep: (step: { thought: string; action?: string; observation?: string; finalAnswer?: string }, isFinal: boolean) => void,
+  stopSignal?: AbortSignal
 ) => {
   const history: Content[] = [];
   const today = new Date().toISOString().split('T')[0];
@@ -186,10 +195,27 @@ export const runAgent = async (
   let stepCount = 0;
   const enabledTools = agent.tools.filter(t => t.enabled).map(t => t.name);
 
+  const config: any = {
+    systemInstruction: systemPrompt,
+    temperature: agent.temperature ?? 0.5,
+  };
+
+  if (agent.maxOutputTokens && agent.maxOutputTokens > 0) {
+    config.maxOutputTokens = agent.maxOutputTokens;
+    // As per guidelines, set thinkingBudget when maxOutputTokens is set for flash model
+    if ((agent.model || model) === 'gemini-2.5-flash') {
+      config.thinkingConfig = { thinkingBudget: Math.max(100, Math.floor(agent.maxOutputTokens / 2)) };
+    }
+  }
+
   while (stepCount < MAX_STEPS) {
+    if (stopSignal?.aborted) {
+      onStep({ thought: "Execution stopped by user.", finalAnswer: "Execution was cancelled by the user." }, true);
+      throw new DOMException('The user aborted the request.', 'AbortError');
+    }
     stepCount++;
     
-    const result = await ai.models.generateContent({ model, contents: history, config: { systemInstruction: systemPrompt } });
+    const result = await ai.models.generateContent({ model: agent.model || model, contents: history, config });
 
     if (result.candidates?.[0]?.content) {
       const modelContent = result.candidates[0].content;
@@ -223,7 +249,7 @@ export const runAgent = async (
            observation = await new Promise<string>((resolve, reject) => {
              runAgent(subAgent, action.args, allAgents, (step, isFinal) => {
                 if(isFinal) resolve(step.finalAnswer || "Sub-agent finished without a final answer.");
-             }).catch(reject);
+             }, stopSignal).catch(reject); // Pass signal and handle potential abort
            });
         } else {
           observation = `Error: Sub-agent '${agentName}' not found or not callable.`;
@@ -246,63 +272,106 @@ export const runAgent = async (
 
 // --- Pipeline Runner ---
 
-// Helper to adapt callback-based runAgent to a promise for pipeline execution
-function runAgentForPipeline(
-    agent: Agent,
-    prompt: string,
-    allAgents: Agent[],
-    onThinking: (step: ReActStep) => void
-): Promise<string> {
-    return new Promise((resolve, reject) => {
-        try {
-            runAgent(agent, prompt, allAgents, (step, isFinal) => {
-                if (!isFinal) {
-                    onThinking({ thought: step.thought, action: step.action, observation: step.observation });
-                } else {
-                    resolve(step.finalAnswer ?? "Agent finished without providing a final answer.");
-                }
-            });
-        } catch (error) {
-            reject(error);
-        }
-    });
-}
-
 export const runPipeline = async (
   pipeline: Pipeline,
   initialPrompt: string,
   allAgents: Agent[],
-  onStep: (step: PipelineStep) => void
+  onStep: (step: PipelineStep) => void,
+  stopSignal?: AbortSignal
 ): Promise<string> => {
-  let previousStepOutput = initialPrompt;
+  const { nodes, edges } = pipeline;
+  if (nodes.length === 0) return "Pipeline has no steps to run.";
 
-  for (const stepConfig of pipeline.steps) {
-    const agent = allAgents.find(a => a.id === stepConfig.agentId);
+  // --- Topological Sort to determine execution order ---
+  const inDegree = new Map<string, number>();
+  const adjList = new Map<string, string[]>();
+
+  for (const node of nodes) {
+    inDegree.set(node.id, 0);
+    adjList.set(node.id, []);
+  }
+
+  for (const edge of edges) {
+    adjList.get(edge.source)?.push(edge.target);
+    inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
+  }
+
+  const queue = nodes.filter(node => inDegree.get(node.id) === 0).map(node => node.id);
+  const sortedNodes: string[] = [];
+
+  while (queue.length > 0) {
+    const u = queue.shift()!;
+    sortedNodes.push(u);
+
+    for (const v of adjList.get(u) || []) {
+      inDegree.set(v, (inDegree.get(v) || 1) - 1);
+      if (inDegree.get(v) === 0) {
+        queue.push(v);
+      }
+    }
+  }
+
+  if (sortedNodes.length !== nodes.length) {
+    throw new Error("Pipeline contains a cycle and cannot be run.");
+  }
+  // --- End of Topological Sort ---
+
+  const executionResults = new Map<string, string>();
+  let finalOutput = "";
+
+  for (const nodeId of sortedNodes) {
+     if (stopSignal?.aborted) {
+      throw new DOMException('The user aborted the request.', 'AbortError');
+    }
+
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) continue;
+
+    const agent = allAgents.find(a => a.id === node.agentId);
     if (!agent) {
-      throw new Error(`Agent with ID ${stepConfig.agentId} not found in pipeline "${pipeline.name}".`);
+      throw new Error(`Agent with ID ${node.agentId} not found in pipeline "${pipeline.name}".`);
+    }
+
+    // Aggregate inputs from parent nodes
+    const parentEdges = edges.filter(edge => edge.target === nodeId);
+    let currentInput = "";
+
+    if (parentEdges.length === 0) {
+      currentInput = initialPrompt;
+    } else {
+      const parentOutputs = parentEdges.map((edge, index) => {
+         const parentOutput = executionResults.get(edge.source) || "";
+         return `--- INPUT ${index + 1} ---\n${parentOutput}`;
+      });
+      currentInput = `You have received multiple inputs. Please process them all.\n\n${parentOutputs.join('\n\n')}`;
     }
     
-    const currentInput = stepConfig.includePreviousOutput ? previousStepOutput : initialPrompt;
-    
     const thinkingSteps: ReActStep[] = [];
-    const onThinking = (step: ReActStep) => {
-        thinkingSteps.push(step);
-    };
+    
+    const output = await new Promise<string>((resolve, reject) => {
+        runAgent(agent, currentInput, allAgents, (step, isFinal) => {
+            if (isFinal) {
+                resolve(step.finalAnswer ?? "Agent finished without providing a final answer.");
+            } else {
+                thinkingSteps.push({ thought: step.thought, action: step.action, observation: step.observation });
+            }
+        }, stopSignal).catch(reject);
+    });
 
-    const output = await runAgentForPipeline(agent, currentInput, allAgents, onThinking);
+    executionResults.set(nodeId, output);
+    finalOutput = output; // The output of the last executed node
     
     onStep({
+      nodeId: node.id,
       agentId: agent.id,
       agentName: agent.name,
       input: currentInput,
       output: output,
       thinkingSteps: thinkingSteps
     });
-
-    previousStepOutput = output;
   }
 
-  return previousStepOutput;
+  return finalOutput;
 };
 
 // --- AI Agent Creator ---
@@ -393,7 +462,8 @@ Your output MUST be a valid JSON object conforming to the provided schema. Do no
 export const generatePipelineFromPrompt = async (
   description: string,
   allAgents: Agent[]
-): Promise<Partial<Pipeline>> => {
+// Fix: Update return type to GeneratedPipeline
+): Promise<GeneratedPipeline> => {
   const systemInstruction = `You are a Workflow Architect. Your task is to design an AI agent pipeline based on a user's description. You must generate a JSON object that defines the pipeline's properties.
 
 You have the following agents available to use as steps in the pipeline. Your primary goal is to select the correct agents in the correct order.
@@ -404,9 +474,9 @@ ${allAgents.map(a => `- ID: "${a.id}", Name: "${a.name}", Description: "${a.desc
 Analyze the user's request and:
 1.  Create a short, descriptive 'name' for the pipeline.
 2.  Write a one-sentence 'description' of its function.
-3.  Create a 'steps' array. Each element in the array must be an object representing a step.
+3.  Create a 'steps' array representing a simple, linear sequence of agents. This is an approximation of the workflow.
 4.  For each step, you MUST include the 'agentId' of one of the available agents.
-5.  For each step, you MUST decide if it should receive the output from the previous step. Set 'includePreviousOutput' to 'true' for this. For the very first step, this should always be 'false'. For subsequent steps, it should usually be 'true' to chain them together.
+5.  For each step, set 'includePreviousOutput' to 'true' unless it is the very first step.
 
 Your output MUST be a valid JSON object conforming to the provided schema. Do not include any other text or explanations.`;
 
@@ -425,7 +495,7 @@ Your output MUST be a valid JSON object conforming to the provided schema. Do no
           },
           required: ["agentId", "includePreviousOutput"]
         },
-        description: 'The sequence of agent steps in the pipeline.'
+        description: 'A linear sequence of agent steps for the pipeline.'
       },
     },
     required: ["name", "description", "steps"]
@@ -447,7 +517,7 @@ Your output MUST be a valid JSON object conforming to the provided schema. Do no
       throw new Error("The model returned an empty response.");
     }
     
-    const generatedPipeline = JSON.parse(jsonText) as { name: string; description: string; steps: PipelineStepConfig[]};
+    const generatedPipeline = JSON.parse(jsonText);
 
     // Validate that the returned agentIds are valid
     if (Array.isArray(generatedPipeline.steps)) {

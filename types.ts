@@ -29,6 +29,9 @@ export interface Agent {
   isMeta?: boolean;
   subAgentIds?: string[];
   predefinedQuestions?: string[];
+  model?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
 }
 
 export interface Message {
@@ -44,20 +47,66 @@ export interface ReActStep {
   observation?: string;
 }
 
-export interface PipelineStepConfig {
+// --- New Graph-based Pipeline Structure ---
+
+export interface PipelineNode {
+  id: string; // Unique ID for the node instance in the pipeline
   agentId: string;
-  includePreviousOutput: boolean;
+  position: { x: number; y: number };
+}
+
+export interface PipelineEdge {
+  id: string;
+  source: string; // ID of the source PipelineNode
+  target: string; // ID of the target PipelineNode
 }
 
 export interface Pipeline {
   id: string;
   name: string;
   description: string;
-  steps: PipelineStepConfig[];
+  nodes: PipelineNode[];
+  edges: PipelineEdge[];
   predefinedQuestions?: string[];
 }
 
+// For AI-generated pipeline structure
+export interface GeneratedPipeline {
+  name?: string;
+  description?: string;
+  steps?: { agentId: string; includePreviousOutput: boolean; }[];
+}
+
+
+// --- Execution State Types for Background Tasks ---
+
+export interface AgentExecutionState {
+  id: string; // Corresponds to agent.id
+  type: 'agent';
+  status: 'running' | 'success' | 'error' | 'cancelled';
+  userInput: string;
+  history: Message[];
+  finalOutput?: string;
+  error?: string;
+}
+
+export interface PipelineExecutionState {
+  id: string; // Corresponds to pipeline.id
+  type: 'pipeline';
+  status: 'running' | 'success' | 'error' | 'cancelled';
+  userInput: string;
+  history: PipelineMessage[];
+  finalOutput?: string;
+  error?: string;
+}
+
+export type ExecutionState = AgentExecutionState | PipelineExecutionState;
+
+
+// --- Pipeline Execution Result Types ---
+
 export interface PipelineStep {
+  nodeId: string; // The ID of the node that was executed
   agentId: string;
   agentName: string;
   input: string;

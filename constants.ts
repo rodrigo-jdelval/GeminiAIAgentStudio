@@ -1,3 +1,4 @@
+
 import type { Agent, Pipeline } from './types';
 
 const ALL_TOOLS = [
@@ -63,6 +64,9 @@ Final Answer: [Your conclusive, well-supported response]`,
       "Summarize the key points of the latest advancements in AI.",
       "Who won the last F1 race?",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.3,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-creative-writer-2',
@@ -88,6 +92,9 @@ Final Answer: [Your creative piece]`,
       "Compose a poem about the city at night.",
       "Brainstorm three ideas for a fantasy novel.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.8,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-cot-math-3',
@@ -111,6 +118,9 @@ Final Answer: [Your final calculated answer]`,
       "Solve for x: 3x - 7 = 14",
       "Explain the Pythagorean theorem.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.2,
+    maxOutputTokens: 1024,
   },
   {
     id: 'agent-tech-ops-4',
@@ -147,6 +157,9 @@ Follow this process:
       "Fetch the main content from developer.google.com using the WebBrowser tool.",
       "Use the code interpreter to calculate 1024 * 768.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.2,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-la-liga-5',
@@ -183,6 +196,9 @@ Final Answer: [Your detailed report on the match]`,
       "Summarize the last La Liga matchday.",
       "Give me the details of the last match for Atlético de Madrid.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.4,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-crypto-6',
@@ -225,6 +241,9 @@ Final Answer: [Your final answer with the price]`,
       "How much is 1 Ethereum in Japanese Yen?",
       "Compare the price of Solana and Cardano in USD.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.1,
+    maxOutputTokens: 512,
   },
   {
     id: 'agent-api-call-7',
@@ -259,6 +278,9 @@ Final Answer: [Your parsed, user-friendly answer]`,
       "Fetch user data from https://jsonplaceholder.typicode.com/users/1",
       "Get a random fact from https://uselessfacts.jsph.pl/random.json?language=en",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.2,
+    maxOutputTokens: 1024,
   },
   {
     id: 'agent-vuln-analyst-8',
@@ -298,6 +320,9 @@ Final Answer: [Your detailed vulnerability summary]`,
       "What is the Log4j vulnerability?",
       "Are there any recent critical vulnerabilities for Apache web servers?",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.2,
+    maxOutputTokens: 4096,
   },
   {
     id: 'agent-threat-intel-9',
@@ -333,6 +358,9 @@ Final Answer: [Your summary of the latest intelligence]`,
       "Tell me about the recent activities of the Lazarus APT group.",
       "Summarize the latest threat report from Mandiant.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.3,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-phishing-detector-10',
@@ -364,6 +392,9 @@ Final Answer: [Your detailed analysis and final verdict]`,
       "Is this a phishing email? 'Dear user, you have won a prize! Claim it now.'",
       "Tell me the common signs of a phishing attempt.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.2,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-hardening-advisor-11',
@@ -400,6 +431,9 @@ Final Answer: [Your compiled hardening checklist]`,
       "What are the security best practices for a Windows Server 2022?",
       "Give me a hardening checklist for a MySQL database.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.2,
+    maxOutputTokens: 4096,
   },
   {
     id: 'agent-incident-responder-12',
@@ -433,6 +467,9 @@ Final Answer: [Your incident response checklist and guidance]`,
       "What is the incident response process for a data breach?",
       "How to contain a ransomware attack?",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.3,
+    maxOutputTokens: 4096,
   },
   {
     id: 'agent-ransomware-assessor-13',
@@ -472,6 +509,9 @@ Your process is as follows:
       "Find ransomware threats for a US-based healthcare company using VMWare.",
       "Which ransomware groups target manufacturing companies in Europe?",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.3,
+    maxOutputTokens: 2048,
   },
   {
     id: 'agent-ransomware-assessor-json-14',
@@ -520,6 +560,9 @@ Final Answer: [Your complete JSON object]`,
       "Find ransomware threats for a US-based healthcare company using VMWare, output as JSON.",
       "Which ransomware groups target manufacturing companies in Europe? Provide the answer in JSON.",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.1,
+    maxOutputTokens: 4096,
   },
     {
     id: 'agent-mitre-ttp-identifier-15',
@@ -530,10 +573,12 @@ Final Answer: [Your complete JSON object]`,
 
 Your input may be a simple list of names or a JSON object containing threat actor information. You must parse this input to identify the group names to research.
 
+**CRITICAL RULE**: You MUST research every threat actor identified in the input using your tools before providing a final answer. Do not stop after researching only one.
+
 Your process:
-1.  **Identify Actors**: Extract the names of the ransomware/threat actor groups from the user's prompt.
-2.  **Research**: For each group, use the 'GoogleSearch' and 'WebBrowser' tools to find their TTPs, specifically referencing the MITRE ATT&CK framework. Use search queries like "[Group Name] MITRE ATT&CK TTPs".
-3.  **Structure Output**: Consolidate your findings into a single JSON object as your final answer. The JSON should map each threat actor's name to a list of their associated TTPs.
+1.  **Identify Actors**: Extract all names of the ransomware/threat actor groups from the user's prompt.
+2.  **Research (Loop)**: For each group, use the 'GoogleSearch' and 'WebBrowser' tools to find their TTPs, specifically referencing the MITRE ATT&CK framework. Use search queries like "[Group Name] MITRE ATT&CK TTPs".
+3.  **Structure Output**: After researching ALL groups, consolidate your findings into a single JSON object as your final answer.
 
 The final JSON output schema MUST be:
 {
@@ -552,10 +597,13 @@ The final JSON output schema MUST be:
 }
 
 Your response format MUST be:
-Thought: [Your reasoning]
+Thought: [Your reasoning for researching a specific actor]
 Action: [ToolName(args)]
 ...
-Final Answer: [Your complete JSON object]`,
+Thought: [Your reasoning for researching the next actor]
+Action: [ToolName(args)]
+...
+Final Answer: [Your complete JSON object after all research is done]`,
     tools: [
       { ...ALL_TOOLS[0], enabled: true }, // GoogleSearch
       { ...ALL_TOOLS[1], enabled: false },
@@ -568,6 +616,37 @@ Final Answer: [Your complete JSON object]`,
       "Find the MITRE TTPs for the Lazarus Group and REvil.",
       "What are the TTPs for Conti ransomware?",
     ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.1,
+    maxOutputTokens: 8192,
+  },
+  {
+    id: 'agent-data-visualizer-16',
+    name: 'Data Visualizer',
+    description: 'Takes structured data (like JSON) and presents it in a clear, human-readable format using Markdown, including images.',
+    avatar: '✨',
+    systemPrompt: `You are an expert data analyst and visualizer. Your sole purpose is to take structured data (like JSON) and transform it into a rich, insightful, and human-readable report using Markdown.
+
+Your process is as follows:
+1.  **Analyze & Summarize**: Begin with a high-level summary. What does the data represent?
+2.  **Extract Key Metrics**: Identify and highlight important aggregate numbers. Use emojis for emphasis (e.g., 🛡️ 4 Threat Actors, 🎯 35 TTPs).
+3.  **Render Images**: If the input data contains URLs pointing to images, you MUST render them using Markdown image syntax: \`![Image Description](URL)\`.
+4.  **Create Rich Tables**: Present detailed data in well-structured Markdown tables.
+5.  **Use Visual Formatting**: Make the report easy to scan using **bold text**, headers (\`###\`), and lists.
+6.  **Maintain Integrity**: Do NOT add any information not present in the original input. Your role is to format and summarize.
+
+Your final output must be a single block of well-formatted Markdown.
+Final Answer: [Your formatted Markdown report]`,
+    tools: ALL_TOOLS.map(t => ({...t, enabled: false})),
+    tags: ['utility', 'formatting', 'markdown', 'images'],
+    isPredefined: true,
+    predefinedQuestions: [
+      'Format this JSON into a table: {"users":[{"name":"Alice","role":"Admin"},{"name":"Bob","role":"User"}]}',
+      'Display this image: {"image_url": "https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png"}'
+    ],
+    model: 'gemini-2.5-flash',
+    temperature: 0.1,
+    maxOutputTokens: 4096,
   }
 ];
 
@@ -575,16 +654,15 @@ export const PREDEFINED_PIPELINES: Pipeline[] = [
   {
     id: 'pipeline-ttp-analysis-1',
     name: 'Ransomware Actor TTP Analysis',
-    description: 'Identifies ransomware threats for a company profile (JSON), then extracts the MITRE ATT&CK TTPs for the identified actors (JSON).',
-    steps: [
-      {
-        agentId: 'agent-ransomware-assessor-json-14',
-        includePreviousOutput: false,
-      },
-      {
-        agentId: 'agent-mitre-ttp-identifier-15',
-        includePreviousOutput: true,
-      },
+    description: 'Identifies ransomware threats (JSON), finds their MITRE TTPs (JSON), and then presents the final data in a clean, readable format.',
+    nodes: [
+      { id: 'node-1', agentId: 'agent-ransomware-assessor-json-14', position: { x: 50, y: 150 } },
+      { id: 'node-2', agentId: 'agent-mitre-ttp-identifier-15', position: { x: 350, y: 150 } },
+      { id: 'node-3', agentId: 'agent-data-visualizer-16', position: { x: 650, y: 150 } },
+    ],
+    edges: [
+      { id: 'edge-1-2', source: 'node-1', target: 'node-2' },
+      { id: 'edge-2-3', source: 'node-2', target: 'node-3' },
     ],
     predefinedQuestions: [
         "Analyze threats for a US financial company, then find the TTPs for the identified actors.",

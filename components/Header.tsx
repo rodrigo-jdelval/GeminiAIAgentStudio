@@ -41,16 +41,16 @@ const Header: React.FC<HeaderProps> = ({ onImport, onExport, onShowADKConfig, on
         <button 
           onClick={handleImportClick}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
-          title="Import agent from a .json file"
+          title="Import app configuration from a .json file"
         >
-          <FileUp className="w-4 h-4" /> Import Config
+          <FileUp className="w-4 h-4" /> Import App
         </button>
         <button 
           onClick={onExport}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
-          title="Export agent to a .json file"
+          title="Export app configuration to a .json file"
         >
-          <FileDown className="w-4 h-4" /> Export Config
+          <FileDown className="w-4 h-4" /> Export App
         </button>
          <button 
           onClick={onShowADKConfig}

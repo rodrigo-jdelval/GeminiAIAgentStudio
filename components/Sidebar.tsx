@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
-import type { Agent, Pipeline } from '../types';
-import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag, ArrowUp, ArrowDown, Sparkles } from './icons/EditorIcons';
+import type { Agent, Pipeline, ExecutionState } from '../types';
+import { Plus, Trash2, Lock, Copy, Bot, Layers, Tag, ArrowUp, ArrowDown, Sparkles, Loader } from './icons/EditorIcons';
 
 interface SidebarProps {
   view: 'agents' | 'pipelines';
@@ -19,10 +19,11 @@ interface SidebarProps {
   onDeletePipeline: (id: string) => void;
   onReorderAgents: (agents: Agent[]) => void;
   onMoveAgent: (agentId: string, direction: 'up' | 'down') => void;
+  executionStates: Record<string, ExecutionState>;
 }
 
 const Sidebar: React.FC<SidebarProps> = (props) => {
-  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onShowCreateAgentModal, onShowCreatePipelineModal, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents, onMoveAgent } = props;
+  const { view, onSetView, agents, pipelines, selectedItemId, onSelectItem, onCreateAgent, onShowCreateAgentModal, onShowCreatePipelineModal, onDeleteAgent, onDuplicateAgent, onCreatePipeline, onDeletePipeline, onReorderAgents, onMoveAgent, executionStates } = props;
 
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
@@ -144,6 +145,7 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
           {filteredAgents.map((agent) => {
             const isCustom = !agent.isPredefined;
             const customIndex = isCustom ? customAgents.findIndex(a => a.id === agent.id) : -1;
+            const isRunning = executionStates[agent.id]?.status === 'running';
             
             return (
               <li key={agent.id}>
@@ -164,7 +166,7 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
                   }
                 >
                   <div className="flex items-center gap-3 overflow-hidden">
-                    <span className="text-xl">{agent.avatar}</span>
+                    {isRunning ? <Loader className="w-6 h-6 text-indigo-400 shrink-0" /> : <span className="text-xl w-6 text-center shrink-0">{agent.avatar}</span>}
                     <span className="truncate flex-1">{agent.name}</span>
                     {agent.isPredefined && <span title="Predefined Agent"><Lock className="w-3 h-3 text-gray-400 flex-shrink-0" /></span>}
                   </div>
@@ -218,30 +220,33 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
   const renderPipelineList = () => (
      <nav className="flex-1 overflow-y-auto p-2">
         <ul>
-          {pipelines.map((pipeline) => (
-            <li key={pipeline.id}>
-              <div
-                onClick={() => onSelectItem(pipeline.id)}
-                className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-colors text-sm cursor-pointer group ${
-                  selectedItemId === pipeline.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'
-                }`}
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <Layers className="w-5 h-5 text-gray-400" />
-                  <span className="truncate flex-1">{pipeline.name}</span>
+          {pipelines.map((pipeline) => {
+            const isRunning = executionStates[pipeline.id]?.status === 'running';
+            return (
+              <li key={pipeline.id}>
+                <div
+                  onClick={() => onSelectItem(pipeline.id)}
+                  className={`w-full flex items-center justify-between text-left p-2 rounded-md transition-colors text-sm cursor-pointer group ${
+                    selectedItemId === pipeline.id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    {isRunning ? <Loader className="w-5 h-5 text-indigo-400" /> : <Layers className="w-5 h-5 text-gray-400" />}
+                    <span className="truncate flex-1">{pipeline.name}</span>
+                  </div>
+                  <div className="flex items-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (window.confirm(`Are you sure you want to delete "${pipeline.name}"?`)) { onDeletePipeline(pipeline.id); } }}
+                      title="Delete Pipeline"
+                      className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md ml-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); if (window.confirm(`Are you sure you want to delete "${pipeline.name}"?`)) { onDeletePipeline(pipeline.id); } }}
-                    title="Delete Pipeline"
-                    className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md ml-1"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </nav>
   );

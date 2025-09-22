@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import type { Agent, Pipeline, Tool, KnowledgeFile, PipelineStepConfig } from '../types';
-import { Info, Paperclip, FileText, Trash2, Tag, ChevronsRight, X, Link2, Unlink2 } from './icons/EditorIcons';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { Agent, Pipeline, Tool, KnowledgeFile, PipelineNode, PipelineEdge } from '../types';
+import { Info, Paperclip, FileText, Trash2, Tag, X } from './icons/EditorIcons';
 
 interface EditorProps {
   view: 'agents' | 'pipelines';
@@ -43,9 +42,9 @@ const AgentEditorForm: React.FC<AgentEditorFormProps> = ({ agent, allAgents, onU
     setFormData(agent);
   }, [agent]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const updatedAgent = { ...formData, [name]: value };
+    const updatedAgent = { ...formData, [name]: (name === 'temperature' || name === 'maxOutputTokens') ? Number(value) : value };
     setFormData(updatedAgent);
     onUpdateAgent(updatedAgent);
   };
@@ -192,6 +191,27 @@ const AgentEditorForm: React.FC<AgentEditorFormProps> = ({ agent, allAgents, onU
         </div>
 
         <div><label htmlFor="systemPrompt" className="block text-sm font-medium text-gray-400 mb-1">System Prompt (Instructions)</label><textarea id="systemPrompt" name="systemPrompt" rows={8} value={formData.systemPrompt} onChange={handleInputChange} disabled={isReadOnly} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 font-mono text-sm leading-relaxed focus:ring-2 focus:ring-indigo-500 transition-colors disabled:opacity-50" /></div>
+
+        <div>
+          <h4 className="text-sm font-medium text-gray-400 mb-2">Model Configuration</h4>
+          <div className="space-y-3 bg-gray-800 p-3 rounded-md">
+            <div>
+              <label htmlFor="model" className="block text-xs font-medium text-gray-400 mb-1">Model</label>
+              <select id="model" name="model" value={formData.model || 'gemini-2.5-flash'} onChange={handleInputChange} disabled={isReadOnly} className="w-full bg-gray-700 border-gray-600 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 transition-colors disabled:opacity-50">
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="temperature" className="block text-xs font-medium text-gray-400 mb-1">Temperature: <span className="font-bold text-white">{(formData.temperature ?? 0.5).toFixed(1)}</span></label>
+              <input type="range" id="temperature" name="temperature" min="0" max="1" step="0.1" value={formData.temperature ?? 0.5} onChange={handleInputChange} disabled={isReadOnly} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer disabled:opacity-50 accent-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="maxOutputTokens" className="block text-xs font-medium text-gray-400 mb-1">Max Output Tokens</label>
+              <input type="number" id="maxOutputTokens" name="maxOutputTokens" value={formData.maxOutputTokens ?? 2048} onChange={handleInputChange} disabled={isReadOnly} className="w-full bg-gray-700 border-gray-600 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 transition-colors disabled:opacity-50" />
+            </div>
+          </div>
+        </div>
+
         <div><h4 className="text-sm font-medium text-gray-400 mb-2">Tools</h4><div className="space-y-2">{formData.tools.map(tool => (<div key={tool.name} className="flex items-center justify-between bg-gray-800 p-3 rounded-md"><div><p className="font-semibold flex items-center gap-2">{tool.name}{tool.warning && (<span title={tool.warning}><Info className="w-4 h-4 text-yellow-400 cursor-help" /></span>)}</p><p className="text-xs text-gray-400">{tool.description}</p></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" checked={tool.enabled} onChange={() => handleToolToggle(tool.name)} className="sr-only peer" disabled={isReadOnly}/><div className="w-11 h-6 bg-gray-600 rounded-full peer peer-focus:ring-2 peer-focus:ring-indigo-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 peer-disabled:opacity-50"></div></label></div>))}</div></div>
         <div><h4 className="text-sm font-medium text-gray-400 mb-2">Meta Agent Configuration</h4><div className="bg-gray-800 p-3 rounded-md"><div className="flex items-center justify-between"><div><p className="font-semibold">Is Meta Agent?</p><p className="text-xs text-gray-400">Allows this agent to call other agents as tools.</p></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" checked={formData.isMeta || false} onChange={handleMetaAgentToggle} className="sr-only peer" disabled={isReadOnly}/><div className="w-11 h-6 bg-gray-600 rounded-full peer peer-focus:ring-2 peer-focus:ring-indigo-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 peer-disabled:opacity-50"></div></label></div>{formData.isMeta && (<div className="mt-4 pt-3 border-t border-gray-700"><h5 className="text-xs font-semibold text-gray-400 mb-2">Callable Agents</h5><div className="space-y-2 max-h-32 overflow-y-auto">{allAgents.filter(a => a.id !== agent.id).map(subAgent => (<div key={subAgent.id} className="flex items-center justify-between"><p className="text-sm">{subAgent.avatar} {subAgent.name}</p><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" checked={(formData.subAgentIds || []).includes(subAgent.id)} onChange={() => handleSubAgentToggle(subAgent.id)} className="sr-only peer" disabled={isReadOnly} /><div className="w-9 h-5 bg-gray-600 rounded-full peer peer-focus:ring-2 peer-focus:ring-indigo-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 peer-disabled:opacity-50"></div></label></div>))}{allAgents.length <= 1 && <p className="text-xs text-gray-500">No other agents available to call.</p>}</div></div>)}</div></div>
         <div><h4 className="text-sm font-medium text-gray-400 mb-2">Knowledge Base</h4><div className="space-y-2">{formData.files && formData.files.length > 0 && (<div className="space-y-2">{formData.files.map(file => (<div key={file.id} className="flex items-center justify-between bg-gray-800 p-2 pl-3 rounded-md text-sm"><div className="flex items-center gap-2 overflow-hidden"><FileText className="w-4 h-4 text-gray-400 shrink-0" /><span className="truncate" title={file.name}>{file.name}</span></div><button onClick={() => handleFileDelete(file.id)} className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md disabled:opacity-50 disabled:cursor-not-allowed" title="Delete File"><Trash2 className="w-4 h-4" /></button></div>))}</div>)}<input type="file" id="file-upload" multiple onChange={handleFileAdd} className="hidden" accept=".txt,.md,.json,.csv,.pdf" /><label htmlFor="file-upload" className="flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-medium border-2 border-dashed rounded-md transition-colors bg-gray-800/50 border-gray-700 hover:bg-gray-800 hover:border-gray-600 cursor-pointer"><Paperclip className="w-4 h-4" /> Add File</label><p className="text-xs text-gray-500 text-center">Attach .txt, .md, .json, .csv, or .pdf files to provide context. Max {MAX_FILE_SIZE_MB}MB per file.</p></div></div>
@@ -211,128 +231,208 @@ interface PipelineEditorFormProps {
 
 const PipelineEditorForm: React.FC<PipelineEditorFormProps> = ({ pipeline, allAgents, onUpdatePipeline }) => {
   const [formData, setFormData] = useState<Pipeline>(pipeline);
-  const dragItem = useRef<number | null>(null);
-  const dragOverItem = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [draggingNode, setDraggingNode] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const [drawingEdge, setDrawingEdge] = useState<{ sourceId: string; mouseX: number; mouseY: number } | null>(null);
 
   useEffect(() => {
     setFormData(pipeline);
   }, [pipeline]);
+  
+  const handleUpdate = useCallback((updatedPipeline: Pipeline) => {
+    setFormData(updatedPipeline);
+    onUpdatePipeline(updatedPipeline);
+  }, [onUpdatePipeline]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    const updatedPipeline = { ...formData, [name]: value };
-    setFormData(updatedPipeline);
-    onUpdatePipeline(updatedPipeline);
+    handleUpdate({ ...formData, [name]: value });
   };
   
-  const addAgentToPipeline = (agentId: string) => {
-    const newStep: PipelineStepConfig = {
-      agentId,
-      includePreviousOutput: formData.steps.length > 0, // Default to true if not the first agent
-    };
-    const updatedPipeline = { ...formData, steps: [...formData.steps, newStep] };
-    setFormData(updatedPipeline);
-    onUpdatePipeline(updatedPipeline);
+  const handleAgentDragStart = (e: React.DragEvent, agentId: string) => {
+    e.dataTransfer.setData('agentId', agentId);
   };
   
-  const removeAgentFromPipeline = (index: number) => {
-    const updatedSteps = [...formData.steps];
-    updatedSteps.splice(index, 1);
-    const updatedPipeline = { ...formData, steps: updatedSteps };
-    setFormData(updatedPipeline);
-    onUpdatePipeline(updatedPipeline);
+  const handleCanvasDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const agentId = e.dataTransfer.getData('agentId');
+    const canvasBounds = canvasRef.current?.getBoundingClientRect();
+    if (agentId && canvasBounds) {
+      const newNode: PipelineNode = {
+        id: `node-${Date.now()}`,
+        agentId,
+        position: {
+          x: e.clientX - canvasBounds.left,
+          y: e.clientY - canvasBounds.top,
+        },
+      };
+      handleUpdate({ ...formData, nodes: [...formData.nodes, newNode] });
+    }
   };
 
-  const toggleLink = (index: number) => {
-    const updatedSteps = [...formData.steps];
-    if (updatedSteps[index]) {
-      updatedSteps[index].includePreviousOutput = !updatedSteps[index].includePreviousOutput;
-      const updatedPipeline = { ...formData, steps: updatedSteps };
-      setFormData(updatedPipeline);
-      onUpdatePipeline(updatedPipeline);
+  const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
+    const node = formData.nodes.find(n => n.id === nodeId);
+    if (node) {
+      const offsetX = e.clientX - node.position.x;
+      const offsetY = e.clientY - node.position.y;
+      setDraggingNode({ id: nodeId, offsetX, offsetY });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (draggingNode) {
+      const newX = e.clientX - draggingNode.offsetX;
+      const newY = e.clientY - draggingNode.offsetY;
+      const newNodes = formData.nodes.map(n =>
+        n.id === draggingNode.id ? { ...n, position: { x: newX, y: newY } } : n
+      );
+      setFormData({ ...formData, nodes: newNodes }); // Local update for performance
+    }
+    if (drawingEdge) {
+      const canvasBounds = canvasRef.current?.getBoundingClientRect();
+      if (canvasBounds) {
+        setDrawingEdge({
+          ...drawingEdge,
+          mouseX: e.clientX - canvasBounds.left,
+          mouseY: e.clientY - canvasBounds.top,
+        });
+      }
     }
   };
   
-  const handleDragSort = () => {
-    if (dragItem.current === null || dragOverItem.current === null) return;
-    const newSteps = [...formData.steps];
-    const draggedItemContent = newSteps.splice(dragItem.current, 1)[0];
-    newSteps.splice(dragOverItem.current, 0, draggedItemContent);
-    dragItem.current = null;
-    dragOverItem.current = null;
-    
-    const updatedPipeline = { ...formData, steps: newSteps };
-    setFormData(updatedPipeline);
-    onUpdatePipeline(updatedPipeline);
+  const handleMouseUp = () => {
+    if (draggingNode) {
+        // Final update to parent
+        onUpdatePipeline(formData);
+    }
+    setDraggingNode(null);
+    setDrawingEdge(null);
   };
 
-  const pipelineAgents = formData.steps.map(step => ({
-    ...step,
-    agent: allAgents.find(a => a.id === step.agentId)
-  })).filter(item => item.agent) as (PipelineStepConfig & { agent: Agent })[];
+  const handleStartEdge = (e: React.MouseEvent, sourceId: string) => {
+    e.stopPropagation();
+    const canvasBounds = canvasRef.current?.getBoundingClientRect();
+    if(canvasBounds){
+        setDrawingEdge({
+          sourceId,
+          mouseX: e.clientX - canvasBounds.left,
+          mouseY: e.clientY - canvasBounds.top,
+        });
+    }
+  };
+  
+  const handleEndEdge = (e: React.MouseEvent, targetId: string) => {
+    e.stopPropagation();
+    if (drawingEdge && drawingEdge.sourceId !== targetId) {
+      const newEdge: PipelineEdge = {
+        id: `edge-${drawingEdge.sourceId}-${targetId}`,
+        source: drawingEdge.sourceId,
+        target: targetId,
+      };
+      // Prevent duplicate edges
+      if (!formData.edges.some(e => e.source === newEdge.source && e.target === newEdge.target)) {
+        handleUpdate({ ...formData, edges: [...formData.edges, newEdge] });
+      }
+    }
+    setDrawingEdge(null);
+  };
 
-  const availableAgents = allAgents.filter(a => !formData.steps.some(step => step.agentId === a.id));
+  const deleteNode = (nodeId: string) => {
+    const newNodes = formData.nodes.filter(n => n.id !== nodeId);
+    const newEdges = formData.edges.filter(e => e.source !== nodeId && e.target !== nodeId);
+    handleUpdate({ ...formData, nodes: newNodes, edges: newEdges });
+  };
+  
+  const deleteEdge = (edgeId: string) => {
+    const newEdges = formData.edges.filter(e => e.id !== edgeId);
+    handleUpdate({ ...formData, edges: newEdges });
+  };
+  
+  const nodeMap = new Map(formData.nodes.map(node => [node.id, node]));
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-gray-800"><h3 className="text-lg font-semibold">Pipeline Editor</h3></div>
+    <div className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col overflow-hidden h-full">
+      <div className="p-4 border-b border-gray-800 shrink-0"><h3 className="text-lg font-semibold">Pipeline Editor</h3></div>
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         <div><label htmlFor="name" className="block text-sm font-medium text-gray-400 mb-1">Pipeline Name</label><input type="text" id="name" name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 transition-colors" /></div>
         <div><label htmlFor="description" className="block text-sm font-medium text-gray-400 mb-1">Description</label><textarea id="description" name="description" rows={2} value={formData.description} onChange={handleInputChange} className="w-full bg-gray-800 border-gray-700 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 transition-colors" /></div>
-        <div>
-          <h4 className="text-sm font-medium text-gray-400 mb-2">Pipeline Flow</h4>
-          <div className="bg-gray-800 p-3 rounded-md min-h-[120px]">
-            {pipelineAgents.length > 0 ? (
-              <div className="flex items-center gap-2 flex-wrap">
-                {pipelineAgents.map((step, index) => (
-                  <React.Fragment key={`${step.agentId}-${index}`}>
-                    <div 
-                      draggable
-                      onDragStart={() => dragItem.current = index}
-                      onDragEnter={() => dragOverItem.current = index}
-                      onDragEnd={handleDragSort}
-                      onDragOver={(e) => e.preventDefault()}
-                      className="flex items-center gap-3 bg-gray-900 p-2 rounded-md cursor-grab active:cursor-grabbing"
-                    >
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-indigo-300 font-bold flex-shrink-0">{index + 1}</div>
-                      <div className="flex-1 flex items-center gap-2">
-                        <span className="text-xl">{step.agent.avatar}</span>
-                        <span className="font-semibold text-sm truncate">{step.agent.name}</span>
-                      </div>
-                      <button onClick={() => removeAgentFromPipeline(index)} className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-
-                    {index < pipelineAgents.length - 1 && (
-                      <div className="flex flex-col items-center">
-                         <button onClick={() => toggleLink(index + 1)} className="p-1 text-gray-400 hover:text-white rounded-md" title={formData.steps[index + 1].includePreviousOutput ? 'Unlink: Use original input' : 'Link: Use previous output'}>
-                           {formData.steps[index + 1].includePreviousOutput ? <Link2 className="w-5 h-5 text-indigo-400" /> : <Unlink2 className="w-5 h-5" />}
-                         </button>
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full text-center text-gray-500 text-sm py-10">This pipeline is empty. Add agents from the list below.</div>
-            )}
-          </div>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-gray-400 mb-2">Available Agents</h4>
-          <div className="space-y-2">
-            {availableAgents.length > 0 ? (
-              availableAgents.map(agent => (
-                <div key={agent.id} className="flex items-center justify-between bg-gray-800 p-3 rounded-md">
-                  <div className="flex items-center gap-3">
+      </div>
+      <div className="flex-1 flex flex-col border-t border-gray-800 overflow-hidden">
+        <h4 className="text-sm font-medium text-gray-400 p-4 pb-2 shrink-0">Workflow Canvas</h4>
+        <div className="flex-1 flex overflow-hidden">
+          <div className="w-1/3 border-r border-gray-800 p-2 overflow-y-auto">
+             <h5 className="text-xs font-semibold text-gray-500 mb-2 px-1">Available Agents</h5>
+             <div className="space-y-1">
+                {allAgents.map(agent => (
+                  <div key={agent.id} draggable onDragStart={(e) => handleAgentDragStart(e, agent.id)}
+                    className="flex items-center gap-3 bg-gray-800 p-2 rounded-md cursor-grab active:cursor-grabbing">
                     <span className="text-xl">{agent.avatar}</span>
-                    <p className="font-semibold">{agent.name}</p>
+                    <p className="font-semibold text-sm truncate">{agent.name}</p>
                   </div>
-                  <button onClick={() => addAgentToPipeline(agent.id)} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-md text-sm font-medium">Add</button>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-500 text-sm py-2">No more agents available to add.</p>
-            )}
+                ))}
+             </div>
+          </div>
+          <div 
+            ref={canvasRef}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleCanvasDrop}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            className="w-2/3 h-full relative overflow-auto bg-gray-950/50"
+            style={{ backgroundSize: '20px 20px', backgroundImage: 'radial-gradient(circle, #3c3c45 1px, rgba(0,0,0,0) 1px)' }}
+          >
+            {formData.nodes.map(node => {
+               const agent = allAgents.find(a => a.id === node.agentId);
+               return (
+                  <div key={node.id} 
+                    style={{ left: node.position.x, top: node.position.y, touchAction: 'none' }}
+                    onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                    onMouseUp={(e) => handleEndEdge(e, node.id)}
+                    className="absolute bg-gray-800 border-2 border-gray-700 rounded-lg p-2 shadow-lg cursor-grab active:cursor-grabbing w-64"
+                  >
+                    <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-4 h-4 bg-indigo-500 rounded-full border-2 border-gray-800 cursor-crosshair" title="Input"/>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{agent?.avatar}</span>
+                      <div className="flex-1 overflow-hidden">
+                          <p className="font-bold truncate">{agent?.name}</p>
+                          <p className="text-xs text-gray-400 truncate">{agent?.description}</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="p-1 text-gray-400 hover:text-white hover:bg-red-500/50 rounded-md"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <div onMouseDown={(e) => handleStartEdge(e, node.id)} className="absolute -right-3 top-1/2 -translate-y-1/2 w-4 h-4 bg-purple-500 rounded-full border-2 border-gray-800 cursor-crosshair" title="Output"/>
+                  </div>
+               );
+            })}
+            <svg className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                {formData.edges.map(edge => {
+                    const sourceNode = nodeMap.get(edge.source);
+                    const targetNode = nodeMap.get(edge.target);
+                    if (!sourceNode || !targetNode) return null;
+                    const startX = sourceNode.position.x + 256; // Node width
+                    const startY = sourceNode.position.y + 32; // Half node height
+                    const endX = targetNode.position.x;
+                    const endY = targetNode.position.y + 32;
+                    const c1X = startX + 50;
+                    const c1Y = startY;
+                    const c2X = endX - 50;
+                    const c2Y = endY;
+                    return <path key={edge.id} d={`M ${startX} ${startY} C ${c1X} ${c1Y}, ${c2X} ${c2Y}, ${endX} ${endY}`} stroke="#6366f1" strokeWidth="2" fill="none" className="hover:stroke-red-500 pointer-events-stroke" onDoubleClick={() => deleteEdge(edge.id)}/>
+                })}
+                {drawingEdge && (() => {
+                    const sourceNode = nodeMap.get(drawingEdge.sourceId);
+                    if (!sourceNode) return null;
+                     const startX = sourceNode.position.x + 256;
+                     const startY = sourceNode.position.y + 32;
+                     const endX = drawingEdge.mouseX;
+                     const endY = drawingEdge.mouseY;
+                     const c1X = startX + 50;
+                     const c1Y = startY;
+                     const c2X = endX - 50;
+                     const c2Y = endY;
+                    return <path d={`M ${startX} ${startY} C ${c1X} ${c1Y}, ${c2X} ${c2Y}, ${endX} ${endY}`} stroke="#a78bfa" strokeWidth="2" fill="none" strokeDasharray="5,5"/>
+                })()}
+            </svg>
           </div>
         </div>
       </div>

@@ -1,5 +1,11 @@
 
-import type { Agent } from '../types';
+import type { Agent, Pipeline } from '../types';
+
+// App config type for clarity
+interface AppConfig {
+  agents: Agent[];
+  pipelines: Pipeline[];
+}
 
 function downloadJsonFile(content: object, filename: string) {
   const data = JSON.stringify(content, null, 2);
@@ -26,9 +32,11 @@ export function exportTextToFile(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function exportAgentToFile(agent: Agent) {
-  const filename = `${agent.name.replace(/\s+/g, '_').toLowerCase()}_agent.json`;
-  downloadJsonFile(agent, filename);
+// NEW: Export the entire application configuration
+export function exportAppConfig(agents: Agent[], pipelines: Pipeline[]) {
+  const appConfig: AppConfig = { agents, pipelines };
+  const filename = 'gemini_agent_studio_config.json';
+  downloadJsonFile(appConfig, filename);
 }
 
 export function exportAgentForADK(agent: Agent) {
@@ -42,8 +50,8 @@ export function exportAgentForADK(agent: Agent) {
   downloadJsonFile(adkConfig, filename);
 }
 
-
-export function importAgentFromFile(file: File): Promise<Agent> {
+// NEW: Import the entire application configuration
+export function importAppConfig(file: File): Promise<AppConfig> {
   return new Promise((resolve, reject) => {
     if (file.type !== 'application/json') {
       return reject(new Error('Invalid file type. Please upload a JSON file.'));
@@ -56,16 +64,14 @@ export function importAgentFromFile(file: File): Promise<Agent> {
         if (typeof result !== 'string') {
           return reject(new Error('Failed to read file content.'));
         }
-        const parsedAgent = JSON.parse(result) as Agent;
+        const parsedConfig = JSON.parse(result) as AppConfig;
         
         // Basic validation
-        if (!parsedAgent.id || !parsedAgent.name || !parsedAgent.systemPrompt) {
-          return reject(new Error('Invalid agent file format. Missing required fields.'));
+        if (!Array.isArray(parsedConfig.agents) || !Array.isArray(parsedConfig.pipelines)) {
+          return reject(new Error('Invalid config file format. Must contain "agents" and "pipelines" arrays.'));
         }
         
-        // Ensure it's not marked as predefined
-        parsedAgent.isPredefined = false;
-        resolve(parsedAgent);
+        resolve(parsedConfig);
 
       } catch (error) {
         reject(new Error('Failed to parse JSON file.'));
