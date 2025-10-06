@@ -61,17 +61,28 @@ async function runGoogleSearch(query: string): Promise<string> {
 
 async function runHttpRequest(url: string): Promise<string> {
   try {
-    // A real application would typically use a server-side proxy for this.
     const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
     if (!response.ok) {
-      return `Error: Received status ${response.status} from ${url}`;
+      return `Error: Received status ${response.status} from proxy for ${url}`;
     }
-    const data = await response.json();
-    const text = data.contents || '';
-    return text.length > 3000 ? text.substring(0, 3000) + '... (truncated)' : text;
+
+    const rawText = await response.text();
+    if (!rawText) {
+        return "Error: Proxy returned an empty response.";
+    }
+
+    try {
+        const data = JSON.parse(rawText);
+        const textContent = data.contents || '';
+        return textContent.length > 3000 ? textContent.substring(0, 3000) + '... (truncated)' : textContent;
+    } catch (jsonError) {
+        console.warn(`HttpRequest: Could not parse JSON from proxy for URL: ${url}.`, jsonError);
+        return `Error: Proxy returned a non-JSON response. This could be an error page from the proxy itself. Raw response snippet: ${rawText.substring(0, 500)}`;
+    }
   } catch (error) {
     console.error("Error with HttpRequest:", error);
-    return `Error: Failed to fetch from URL ${url}. It might be a CORS issue or network problem.`;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown fetch error';
+    return `Error: Failed to fetch from URL ${url}. It might be a CORS issue, a network problem, or the proxy service is down. Details: ${errorMessage}`;
   }
 }
 
@@ -88,14 +99,25 @@ async function runCodeInterpreter(code: string): Promise<string> {
 
 async function runWebBrowser(url: string): Promise<string> {
   try {
-    // Using a CORS proxy to fetch client-side. A real-world app should use a backend for this.
     const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
     if (!response.ok) {
-        return `Error: Failed to fetch the webpage. Status: ${response.status}`;
+        return `Error: Failed to fetch the webpage via proxy. Status: ${response.status}`;
     }
-    const data = await response.json();
-    let content = data.contents || 'No content found.';
+    
+    const rawText = await response.text();
+    if (!rawText) {
+        return "Error: Proxy returned an empty response.";
+    }
 
+    let content = '';
+    try {
+        const data = JSON.parse(rawText);
+        content = data.contents || 'No content found from proxy.';
+    } catch (jsonError) {
+        console.warn(`WebBrowser: Could not parse JSON from proxy for URL: ${url}.`, jsonError);
+        return `Error: Proxy returned a non-JSON response. This is likely an error from the proxy service or the target site is blocking it. Raw response snippet: ${rawText.substring(0, 500)}`;
+    }
+    
     // Basic HTML stripping to get cleaner text for the model
     content = content
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -109,7 +131,8 @@ async function runWebBrowser(url: string): Promise<string> {
     return content.substring(0, 4000) + '... (content truncated)';
   } catch (error) {
     console.error('Error in WebBrowser tool:', error);
-    return `Error: Could not retrieve content from ${url}. Check if the correct and accessible.`;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown fetch error';
+    return `Error: Could not retrieve content from ${url}. This might be a network issue or the proxy service is down. Details: ${errorMessage}`;
   }
 }
 
